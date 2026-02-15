@@ -18,6 +18,8 @@ import {
   Download,
   Settings,
   Search,
+  Trash2,
+  EyeOff,
 } from "lucide-react";
 
 const EVENT_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -105,9 +107,11 @@ function formatEventDescription(event: ActivityEvent, isFun: boolean): string {
 interface ActivityFeedProps {
   events: ActivityEvent[];
   className?: string;
+  onRedactEvent?: (eventId: string) => void;
+  onRedactFields?: (eventId: string, fields: string[]) => void;
 }
 
-export function ActivityFeed({ events, className }: ActivityFeedProps) {
+export function ActivityFeed({ events, className, onRedactEvent, onRedactFields }: ActivityFeedProps) {
   const { isFun, label } = useMode();
   const [filter, setFilter] = useState<EventType | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -177,7 +181,7 @@ export function ActivityFeed({ events, className }: ActivityFeedProps) {
               return (
                 <div
                   key={event.id}
-                  className="flex items-start gap-3 py-3 border-b border-gray-100 last:border-0"
+                  className="group flex items-start gap-3 py-3 border-b border-gray-100 last:border-0"
                 >
                   <div
                     className={cn(
@@ -201,6 +205,34 @@ export function ActivityFeed({ events, className }: ActivityFeedProps) {
                         </Badge>
                       )}
                     </div>
+                  </div>
+                  {/* Redaction controls */}
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {onRedactFields && Object.keys(event.event_data).length > 0 && (
+                      <button
+                        onClick={() =>
+                          onRedactFields(
+                            event.id,
+                            Object.keys(event.event_data).filter(
+                              (k) => event.event_data[k] !== "[redacted]" && k !== "idempotency_key"
+                            )
+                          )
+                        }
+                        className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-yellow-600"
+                        title="Redact details"
+                      >
+                        <EyeOff className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    {onRedactEvent && (
+                      <button
+                        onClick={() => onRedactEvent(event.id)}
+                        className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-red-600"
+                        title="Delete event"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
