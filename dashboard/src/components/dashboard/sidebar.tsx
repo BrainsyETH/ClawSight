@@ -29,7 +29,7 @@ const NAV_ITEMS = [
   {
     href: "/learn",
     icon: Compass,
-    label: "Browse Skills",
+    label: "Skill Store",
   },
   {
     href: "/character",
