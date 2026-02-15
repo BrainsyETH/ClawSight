@@ -82,8 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (error) {
-        // Fallback: store wallet directly for demo/dev mode
-        console.warn("[auth] Supabase SIWE verification not configured, using direct auth:", error.message);
+        throw new Error(`SIWE authentication failed: ${error.message}`);
       }
 
       // 4. Ensure user row exists
@@ -96,10 +95,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem("clawsight_wallet", addr);
     } catch (err) {
       console.error("[auth] Connection failed:", err);
-      // Demo fallback when no wallet available
-      const demoAddress = "0x1a2b3c4d5e6f7890abcdef1234567890abcdef12";
-      setWalletAddress(demoAddress);
-      localStorage.setItem("clawsight_wallet", demoAddress);
     } finally {
       setIsConnecting(false);
     }
@@ -115,11 +110,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signMsg = useCallback(
     async (message: string): Promise<string> => {
-      if (isConnected) {
-        return signMessageAsync({ message });
+      if (!isConnected) {
+        throw new Error("Wallet not connected. Cannot sign message.");
       }
-      // Demo fallback
-      return `0xdemo_signature_${message.slice(0, 16)}`;
+      return signMessageAsync({ message });
     },
     [isConnected, signMessageAsync]
   );

@@ -46,9 +46,49 @@ export async function PUT(request: NextRequest) {
   const body = await request.json();
   const { skill_slug, enabled, config, config_source, expected_updated_at } = body;
 
-  if (!skill_slug) {
+  if (!skill_slug || typeof skill_slug !== "string") {
     return NextResponse.json(
-      { error: "skill_slug is required" },
+      { error: "skill_slug is required and must be a string" },
+      { status: 400 }
+    );
+  }
+
+  // Validate config object
+  if (config !== undefined) {
+    if (typeof config !== "object" || config === null || Array.isArray(config)) {
+      return NextResponse.json(
+        { error: "config must be a plain object" },
+        { status: 400 }
+      );
+    }
+    // Validate size (max 512KB)
+    const configSize = JSON.stringify(config).length;
+    if (configSize > 524_288) {
+      return NextResponse.json(
+        { error: "config exceeds maximum size of 512KB" },
+        { status: 400 }
+      );
+    }
+    // Validate encrypted fields match expected format
+    for (const [, value] of Object.entries(config as Record<string, unknown>)) {
+      if (typeof value === "string" && value.startsWith("enc:")) {
+        // Encrypted values must be valid base64 after the "enc:" prefix
+        const base64Part = value.slice(4);
+        if (!/^[A-Za-z0-9+/]+=*$/.test(base64Part) || base64Part.length < 20) {
+          return NextResponse.json(
+            { error: "Invalid encrypted field format" },
+            { status: 400 }
+          );
+        }
+      }
+    }
+  }
+
+  // Validate config_source
+  const validSources = ["clawsight", "manual", "preset", "default"];
+  if (config_source && !validSources.includes(config_source)) {
+    return NextResponse.json(
+      { error: `config_source must be one of: ${validSources.join(", ")}` },
       { status: 400 }
     );
   }

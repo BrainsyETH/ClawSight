@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAuth } from "@/lib/server/auth";
+import { requireAuth, checkRateLimit } from "@/lib/server/auth";
 
 /**
  * GET /v1/api/export
  * Export all user data as JSON. GDPR "right to data portability".
+ * Rate limit: 1 export per minute per wallet.
  */
 export async function GET(request: NextRequest) {
   const auth = await requireAuth(request);
   if (auth instanceof NextResponse) return auth;
   const { wallet, supabase } = auth;
+
+  if (!checkRateLimit(wallet, "export", 1, 60_000)) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Max 1 export per minute." },
+      { status: 429 }
+    );
+  }
 
   // Fetch all user data in parallel
   const [userRes, configsRes, eventsRes, statusRes] = await Promise.all([

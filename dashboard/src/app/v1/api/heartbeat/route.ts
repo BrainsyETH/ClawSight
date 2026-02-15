@@ -30,6 +30,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Validate session_id format if provided (UUID v4)
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (session_id && (typeof session_id !== "string" || !UUID_RE.test(session_id))) {
+    return NextResponse.json(
+      { error: "session_id must be a valid UUID v4" },
+      { status: 400 }
+    );
+  }
+
   // Upsert agent_status row
   const { error } = await supabase.from("agent_status").upsert(
     {
