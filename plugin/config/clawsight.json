@@ -1,0 +1,22 @@
+{
+  "enabled": true,
+  "api_endpoint": "https://api.clawsight.app",
+  "sync": {
+    "activity": true,
+    "wallet": true,
+    "status": true,
+    "skill_configs": true
+  },
+  "limits": {
+    "daily_spend_cap_usdc": 0.10,
+    "monthly_spend_cap_usdc": 2.00
+  },
+  "heartbeat_interval_seconds": 30,
+  "sync_batch_size": 50,
+  "offline_queue_max_size": 1000,
+  "retry": {
+    "max_attempts": 4,
+    "base_delay_ms": 2000,
+    "max_delay_ms": 60000
+  }
+}

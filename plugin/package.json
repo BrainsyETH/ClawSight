@@ -1,0 +1,20 @@
+{
+  "name": "@clawsight/plugin",
+  "version": "0.1.0",
+  "description": "ClawSight plugin for OpenClaw — syncs activity, manages skill configs, and connects your agent to the dashboard.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "keywords": ["openclaw", "clawsight", "agent", "dashboard"],
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0"
+  }
+}

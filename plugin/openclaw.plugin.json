@@ -1,0 +1,30 @@
+{
+  "name": "clawsight",
+  "version": "0.1.0",
+  "description": "ClawSight dashboard integration — see what your agent sees",
+  "author": "ClawSight",
+  "homepage": "https://clawsight.app",
+  "repository": "https://github.com/BrainsyETH/ClawSight",
+  "entry": "dist/index.js",
+  "hooks": [
+    "before_agent_start",
+    "after_agent_end",
+    "before_tool_call",
+    "after_tool_call",
+    "on_error"
+  ],
+  "permissions": [
+    "read:config",
+    "write:config",
+    "read:session_logs",
+    "read:wallet",
+    "network:outbound"
+  ],
+  "config_schema": {
+    "type": "object",
+    "properties": {
+      "api_endpoint": { "type": "string", "default": "https://api.clawsight.app" },
+      "enabled": { "type": "boolean", "default": true }
+    }
+  }
+}
