@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 /**
- * Security middleware: adds CSP and other security headers to all responses.
+ * Security proxy: adds CSP and other security headers to all responses.
+ * Migrated from middleware.ts → proxy.ts for Next.js 16.
  */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const response = NextResponse.next();
 
   // Content Security Policy

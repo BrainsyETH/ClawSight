@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useMode } from "@/hooks/use-mode";
 import { useAuth } from "@/hooks/use-auth";
 import { useEns, formatAddressOrEns } from "@/hooks/use-ens";
+import { useWalletBalance } from "@/hooks/use-wallet-balance";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { cn, truncateAddress } from "@/lib/utils";
 import {
@@ -53,6 +54,7 @@ export function Sidebar() {
   const { isFun, agentName } = useMode();
   const { walletAddress } = useAuth();
   const { name: ensName } = useEns(walletAddress);
+  const { balance } = useWalletBalance(walletAddress);
 
   return (
     <>
@@ -104,7 +106,14 @@ export function Sidebar() {
                 : "Not connected"}
             </p>
             {walletAddress && (
-              <p className="text-xs text-green-600 font-medium mt-1">Connected</p>
+              <>
+                {balance !== null && (
+                  <p className="text-sm font-semibold text-gray-800 mt-1">
+                    {balance.toFixed(2)} <span className="text-xs text-gray-500 font-normal">USDC</span>
+                  </p>
+                )}
+                <p className="text-xs text-green-600 font-medium mt-0.5">Connected</p>
+              </>
             )}
           </div>
         </div>

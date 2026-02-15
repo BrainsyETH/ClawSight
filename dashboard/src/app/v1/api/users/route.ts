@@ -150,3 +150,38 @@ export async function PATCH(request: NextRequest) {
 
   return NextResponse.json({ user: data });
 }
+
+/**
+ * DELETE /v1/api/users
+ * Delete the authenticated user and all associated data.
+ * Cascades to skill_configs (FK), and explicitly deletes activity_events and agent_status.
+ */
+export async function DELETE(request: NextRequest) {
+  const auth = await requireAuth(request);
+  if (auth instanceof NextResponse) return auth;
+  const { wallet, supabase } = auth;
+
+  if (!checkRateLimit(wallet, "users-delete", 1, 60_000)) {
+    return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
+  }
+
+  // Delete in order: activity_events, agent_status, skill_configs, user
+  await supabase.from("activity_events").delete().eq("wallet_address", wallet);
+  await supabase.from("agent_status").delete().eq("wallet_address", wallet);
+  await supabase.from("skill_configs").delete().eq("wallet_address", wallet);
+
+  const { error } = await supabase
+    .from("users")
+    .delete()
+    .eq("wallet_address", wallet);
+
+  if (error) {
+    console.error("[users] Failed to delete user:", error);
+    return NextResponse.json(
+      { error: "Failed to delete account" },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ deleted: true });
+}

@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useMode } from "@/hooks/use-mode";
 import { useAgentStatus } from "@/hooks/use-agent-status";
+import { useWalletBalance } from "@/hooks/use-wallet-balance";
 import {
   useActivityEvents,
   useSkillConfigs,
@@ -13,7 +14,7 @@ import { StatusIndicator } from "@/components/shared/status-indicator";
 import { WalletCard } from "@/components/dashboard/wallet-card";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { SpendingChart } from "@/components/dashboard/spending-chart";
-import { MemoryViewer, getDemoMemories } from "@/components/dashboard/memory-viewer";
+import { MemoryViewer, MemoryEntry } from "@/components/dashboard/memory-viewer";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { ActivityEvent } from "@/types";
@@ -48,15 +49,74 @@ function deriveSpending(events: ActivityEvent[]) {
   return { categories, totalSpend: total };
 }
 
+/**
+ * Derive agent "memories" from activity events.
+ * Maps meaningful events into the MemoryEntry shape.
+ */
+function deriveMemories(events: ActivityEvent[]): MemoryEntry[] {
+  const memories: MemoryEntry[] = [];
+
+  for (const e of events) {
+    if (e.event_type === "skill_installed" && e.skill_slug) {
+      memories.push({
+        id: e.id,
+        key: `Installed skill: ${e.skill_slug}`,
+        value: `The ${e.skill_slug} skill was installed and configured.${e.event_data?.config_source ? ` Source: ${e.event_data.config_source}` : ""}`,
+        category: "fact",
+        source: "skill_event",
+        created_at: e.occurred_at,
+        last_accessed: null,
+        access_count: 1,
+      });
+    } else if (e.event_type === "config_changed" && e.skill_slug) {
+      memories.push({
+        id: e.id,
+        key: `Config updated: ${e.skill_slug}`,
+        value: `Configuration for ${e.skill_slug} was modified.${e.event_data?.fields ? ` Fields: ${(e.event_data.fields as string[]).join(", ")}` : ""}`,
+        category: "preference",
+        source: "config_event",
+        created_at: e.occurred_at,
+        last_accessed: null,
+        access_count: 1,
+      });
+    } else if (e.event_type === "error") {
+      memories.push({
+        id: e.id,
+        key: `Error: ${(e.event_data?.message as string)?.slice(0, 60) || "Unknown error"}`,
+        value: String(e.event_data?.message || e.event_data?.error || "An error occurred"),
+        category: "context",
+        source: e.skill_slug || "system",
+        created_at: e.occurred_at,
+        last_accessed: null,
+        access_count: 1,
+      });
+    } else if (e.event_type === "payment" && typeof e.event_data?.amount === "number") {
+      memories.push({
+        id: e.id,
+        key: `Payment: $${(e.event_data.amount as number).toFixed(4)} to ${e.event_data.service || e.skill_slug || "API"}`,
+        value: `x402 micropayment of $${(e.event_data.amount as number).toFixed(4)} USDC was processed for ${e.event_data.service || e.skill_slug || "API service"}.`,
+        category: "fact",
+        source: "payment",
+        created_at: e.occurred_at,
+        last_accessed: null,
+        access_count: 1,
+      });
+    }
+  }
+
+  return memories.slice(0, 50);
+}
+
 export default function DashboardPage() {
   const { walletAddress } = useAuth();
   const { isFun, label, agentName } = useMode();
   const agentStatus = useAgentStatus(walletAddress ?? undefined);
+  const { balance: walletBalance } = useWalletBalance(walletAddress);
   const { events, loading: eventsLoading, redactEvent, redactEventFields } = useActivityEvents(walletAddress ?? undefined);
   const { configs, loading: configsLoading } = useSkillConfigs(walletAddress ?? undefined);
-  const demoMemories = getDemoMemories();
 
   const spending = useMemo(() => deriveSpending(events), [events]);
+  const memories = useMemo(() => deriveMemories(events), [events]);
 
   // Derive stats from real data
   const activeSkills = configs.filter((c) => c.enabled);
@@ -116,7 +176,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
         <WalletCard
-          balance={0}
+          balance={walletBalance ?? 0}
           todaySpending={spending.totalSpend}
           weekSpending={spending.totalSpend}
         />
@@ -157,7 +217,7 @@ export default function DashboardPage() {
       />
 
       {/* Memory Viewer */}
-      <MemoryViewer memories={demoMemories} />
+      <MemoryViewer memories={memories} />
     </div>
   );
 }
