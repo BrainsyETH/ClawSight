@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { ActivityEvent, EventType } from "@/types";
-import { useMode } from "@/hooks/use-mode";
 import { cn, timeAgo } from "@/lib/utils";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,52 +51,40 @@ const EVENT_TYPES: EventType[] = [
   "config_changed",
 ];
 
-function formatEventDescription(event: ActivityEvent, isFun: boolean): string {
+function formatEventDescription(event: ActivityEvent): string {
   const data = event.event_data;
 
   switch (event.event_type) {
     case "tool_call": {
       const tool = (data.tool as string) || "unknown tool";
       const duration = data.duration_ms ? ` (${data.duration_ms}ms)` : "";
-      return isFun
-        ? `I used ${tool}${duration}`
-        : `Tool: ${tool}${duration}`;
+      return `Tool: ${tool}${duration}`;
     }
     case "message_sent": {
       const platform = (data.platform as string) || "unknown";
       const preview = (data.preview as string) || "";
-      return isFun
-        ? `I sent a message via ${platform}${preview ? `: "${preview}"` : ""}`
-        : `Message sent via ${platform}${preview ? `: "${preview}"` : ""}`;
+      return `Message sent via ${platform}${preview ? `: "${preview}"` : ""}`;
     }
     case "payment": {
       const amount = data.amount ? `$${data.amount}` : "";
       const service = (data.service as string) || "unknown";
-      return isFun
-        ? `I paid ${amount} to ${service}`
-        : `Payment: ${amount} to ${service}`;
+      return `Payment: ${amount} to ${service}`;
     }
     case "error": {
       const msg = (data.message as string) || "Unknown error";
-      return isFun ? `Oops! Something went wrong: ${msg}` : `Error: ${msg}`;
+      return `Error: ${msg}`;
     }
     case "status_change": {
       const newStatus = (data.new_status as string) || "unknown";
-      return isFun
-        ? `I'm now ${newStatus}`
-        : `Status changed to ${newStatus}`;
+      return `Status changed to ${newStatus}`;
     }
     case "skill_installed": {
       const skill = (data.skill_name as string) || "unknown";
-      return isFun
-        ? `I learned a new skill: ${skill}!`
-        : `Skill installed: ${skill}`;
+      return `Skill installed: ${skill}`;
     }
     case "config_changed": {
       const skill = (data.skill_slug as string) || "unknown";
-      return isFun
-        ? `My ${skill} settings were updated`
-        : `Config updated: ${skill}`;
+      return `Config updated: ${skill}`;
     }
     default:
       return JSON.stringify(data);
@@ -112,14 +99,13 @@ interface ActivityFeedProps {
 }
 
 export function ActivityFeed({ events, className, onRedactEvent, onRedactFields }: ActivityFeedProps) {
-  const { isFun, label } = useMode();
   const [filter, setFilter] = useState<EventType | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   const filtered = events.filter((e) => {
     if (filter !== "all" && e.event_type !== filter) return false;
     if (searchQuery) {
-      const desc = formatEventDescription(e, isFun).toLowerCase();
+      const desc = formatEventDescription(e).toLowerCase();
       if (!desc.includes(searchQuery.toLowerCase())) return false;
     }
     return true;
@@ -130,7 +116,7 @@ export function ActivityFeed({ events, className, onRedactEvent, onRedactFields 
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>
-            {label("What I've Been Up To", "Activity Feed")}
+            Activity Feed
           </CardTitle>
         </div>
         <div className="flex items-center gap-2 mt-3 flex-wrap">
@@ -193,7 +179,7 @@ export function ActivityFeed({ events, className, onRedactEvent, onRedactFields 
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-900">
-                      {formatEventDescription(event, isFun)}
+                      {formatEventDescription(event)}
                     </p>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-xs text-gray-400">

@@ -54,7 +54,6 @@ describe("skill form structure", () => {
     expect(typeof form.icon).toBe("string");
     expect(form.icon.length).toBeGreaterThan(0);
     expect(typeof form.description).toBe("string");
-    expect(typeof form.funDescription).toBe("string");
     expect(typeof form.category).toBe("string");
     expect(Array.isArray(form.fields)).toBe(true);
     expect(form.fields.length).toBeGreaterThan(0);

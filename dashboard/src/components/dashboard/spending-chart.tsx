@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo } from "react";
-import { useMode } from "@/hooks/use-mode";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { formatUSDC } from "@/lib/utils";
 import { BarChart3 } from "lucide-react";
@@ -23,8 +22,6 @@ export function SpendingChart({
   totalSpend,
   period,
 }: SpendingChartProps) {
-  const { label } = useMode();
-
   const maxAmount = useMemo(
     () => Math.max(...categories.map((c) => c.amount), 0.001),
     [categories]
@@ -42,7 +39,7 @@ export function SpendingChart({
         <CardTitle className="flex items-center justify-between text-base">
           <span className="flex items-center gap-2">
             <BarChart3 className="w-4 h-4" />
-            {label("Where My Money Goes", "Spending Breakdown")}
+            Spending Breakdown
           </span>
           <span className="text-sm font-normal text-gray-500">
             {periodLabel}
@@ -104,22 +101,4 @@ export function SpendingChart({
       </CardContent>
     </Card>
   );
-}
-
-// Demo spending data generator
-export function getDemoSpendingData(): {
-  categories: SpendingCategory[];
-  totalSpend: number;
-} {
-  const categories: SpendingCategory[] = [
-    { label: "AI Model Calls", amount: 0.089, color: "#ef4444" },
-    { label: "Web Search", amount: 0.042, color: "#f59e0b" },
-    { label: "Slack Messages", amount: 0.018, color: "#8b5cf6" },
-    { label: "GitHub Actions", amount: 0.031, color: "#10b981" },
-    { label: "Heartbeats", amount: 0.012, color: "#6b7280" },
-    { label: "Config Sync", amount: 0.005, color: "#3b82f6" },
-  ];
-
-  const totalSpend = categories.reduce((sum, c) => sum + c.amount, 0);
-  return { categories, totalSpend };
 }

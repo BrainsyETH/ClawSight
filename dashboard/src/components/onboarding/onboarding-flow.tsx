@@ -2,20 +2,19 @@
 
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { DisplayMode } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { Wallet, Search, Sparkles, BarChart3, CheckCircle, Loader2 } from "lucide-react";
+import { Wallet, Search, CheckCircle, Loader2 } from "lucide-react";
 
 // ============================================================
-// 3-step onboarding: Connect Wallet → Detect OpenClaw → Choose Style
+// 2-step onboarding: Connect Wallet → Detect OpenClaw
 // ============================================================
 
-type Step = "connect" | "detect" | "style";
+type Step = "connect" | "detect";
 
 interface OnboardingFlowProps {
-  onComplete: (mode: DisplayMode) => void;
+  onComplete: () => void;
 }
 
 export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
@@ -25,7 +24,6 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [detecting, setDetecting] = useState(false);
   const [detected, setDetected] = useState(false);
   const [detectError, setDetectError] = useState(false);
-  const [selectedMode, setSelectedMode] = useState<DisplayMode>("fun");
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -50,7 +48,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
       if (res?.ok) {
         setDetected(true);
-        setTimeout(() => setStep("style"), 800);
+        setTimeout(() => onComplete(), 800);
       } else {
         // Gateway not found — let user skip or retry
         setDetectError(true);
@@ -62,16 +60,12 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
     }
   };
 
-  const handleFinish = () => {
-    onComplete(selectedMode);
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-red-50 to-white p-4">
       <div className="w-full max-w-lg">
         {/* Header */}
         <div className="text-center mb-8">
-          <span className="text-6xl mb-4 block">🦞</span>
+          <span className="text-6xl mb-4 block">&#x1F99E;</span>
           <h1 className="text-3xl font-bold text-gray-900">ClawSight</h1>
           <p className="text-gray-500 mt-2">
             The control panel for your AI agent
@@ -80,29 +74,29 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
         {/* Progress */}
         <div className="flex items-center justify-center gap-2 mb-8">
-          {(["connect", "detect", "style"] as Step[]).map((s, i) => (
+          {(["connect", "detect"] as Step[]).map((s, i) => (
             <div key={s} className="flex items-center gap-2">
               <div
                 className={cn(
                   "w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors",
                   step === s
                     ? "bg-red-500 text-white"
-                    : (["connect", "detect", "style"].indexOf(step) > i)
+                    : (["connect", "detect"].indexOf(step) > i)
                       ? "bg-green-500 text-white"
                       : "bg-gray-200 text-gray-500"
                 )}
               >
-                {["connect", "detect", "style"].indexOf(step) > i ? (
+                {["connect", "detect"].indexOf(step) > i ? (
                   <CheckCircle className="w-4 h-4" />
                 ) : (
                   i + 1
                 )}
               </div>
-              {i < 2 && (
+              {i < 1 && (
                 <div
                   className={cn(
                     "w-12 h-0.5",
-                    ["connect", "detect", "style"].indexOf(step) > i
+                    ["connect", "detect"].indexOf(step) > i
                       ? "bg-green-500"
                       : "bg-gray-200"
                   )}
@@ -190,7 +184,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                   <p className="text-xs text-amber-600 mb-3">
                     No gateway found at localhost:3080. You can still use ClawSight — just connect your plugin later.
                   </p>
-                  <Button variant="outline" size="sm" onClick={() => setStep("style")}>
+                  <Button variant="outline" size="sm" onClick={() => onComplete()}>
                     Skip for now
                   </Button>
                 </div>
@@ -205,70 +199,11 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                     <li>Windows: Use WSL2 (10 min)</li>
                     <li>Cloud: DigitalOcean 1-click deploy</li>
                   </ul>
-                  <Button variant="link" size="sm" className="mt-2 px-0" onClick={() => setStep("style")}>
+                  <Button variant="link" size="sm" className="mt-2 px-0" onClick={() => onComplete()}>
                     Skip and set up later
                   </Button>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Step 3: Choose Style */}
-        {step === "style" && (
-          <Card>
-            <CardContent className="p-8">
-              <Sparkles className="w-12 h-12 text-red-500 mx-auto mb-4" />
-              <h2 className="text-xl font-semibold mb-2 text-center">
-                Choose Your Style
-              </h2>
-              <p className="text-gray-500 mb-6 text-center">
-                How should your dashboard look and feel? You can change this
-                anytime in settings.
-              </p>
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <button
-                  onClick={() => setSelectedMode("fun")}
-                  className={cn(
-                    "p-5 rounded-xl border-2 text-left transition-all",
-                    selectedMode === "fun"
-                      ? "border-red-500 bg-red-50 shadow-sm"
-                      : "border-gray-200 hover:border-gray-300"
-                  )}
-                >
-                  <span className="text-3xl mb-3 block">🦞</span>
-                  <h3 className="font-semibold">Fun Mode</h3>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Meet Mrs. Claws! Personality-driven UI with a playful touch.
-                  </p>
-                  <div className="mt-3 p-2 bg-white rounded-lg text-xs text-gray-600 italic">
-                    &quot;Good morning! I&apos;ve been busy today.&quot;
-                  </div>
-                </button>
-                <button
-                  onClick={() => setSelectedMode("professional")}
-                  className={cn(
-                    "p-5 rounded-xl border-2 text-left transition-all",
-                    selectedMode === "professional"
-                      ? "border-red-500 bg-red-50 shadow-sm"
-                      : "border-gray-200 hover:border-gray-300"
-                  )}
-                >
-                  <span className="text-3xl mb-3 block">
-                    <BarChart3 className="w-8 h-8 text-gray-600" />
-                  </span>
-                  <h3 className="font-semibold">Professional</h3>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Clean, data-focused dashboard. All business, no fluff.
-                  </p>
-                  <div className="mt-3 p-2 bg-white rounded-lg text-xs text-gray-600">
-                    Agent status: Active. 23 tasks completed.
-                  </div>
-                </button>
-              </div>
-              <Button onClick={handleFinish} size="lg" className="w-full">
-                Let&apos;s Go!
-              </Button>
             </CardContent>
           </Card>
         )}

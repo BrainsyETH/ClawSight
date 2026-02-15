@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from "react";
 import { SkillFormDefinition, FormField } from "@/types";
-import { useMode } from "@/hooks/use-mode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
@@ -27,7 +26,6 @@ export function SkillConfigForm({
   onSave,
   saving = false,
 }: SkillConfigFormProps) {
-  const { isFun } = useMode();
   const [values, setValues] = useState<Record<string, unknown>>(
     initialValues || definition.defaultConfig
   );
@@ -59,7 +57,7 @@ export function SkillConfigForm({
                 </Badge>
               </CardTitle>
               <p className="text-sm text-gray-500 mt-1">
-                {isFun ? definition.funDescription : definition.description}
+                {definition.description}
               </p>
             </div>
           </div>
@@ -71,7 +69,6 @@ export function SkillConfigForm({
               field={field}
               value={values[field.key]}
               onChange={(v) => setValue(field.key, v)}
-              isFun={isFun}
               showSecret={showSecrets[field.key] || false}
               onToggleSecret={() =>
                 setShowSecrets((prev) => ({
@@ -110,7 +107,6 @@ interface FieldRendererProps {
   field: FormField;
   value: unknown;
   onChange: (value: unknown) => void;
-  isFun: boolean;
   showSecret: boolean;
   onToggleSecret: () => void;
 }
@@ -119,17 +115,14 @@ function FieldRenderer({
   field,
   value,
   onChange,
-  isFun,
   showSecret,
   onToggleSecret,
 }: FieldRendererProps) {
-  const label = isFun && field.funLabel ? field.funLabel : field.label;
-
   return (
     <div className="space-y-2">
       <label className="block">
         <span className="text-sm font-medium text-gray-700">
-          {label}
+          {field.label}
           {field.required && <span className="text-red-500 ml-1">*</span>}
         </span>
         {field.description && (

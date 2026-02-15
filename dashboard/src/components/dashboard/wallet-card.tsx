@@ -1,6 +1,5 @@
 "use client";
 
-import { useMode } from "@/hooks/use-mode";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { formatUSDC } from "@/lib/utils";
 import { Wallet, TrendingDown } from "lucide-react";
@@ -16,14 +15,12 @@ export function WalletCard({
   todaySpending,
   weekSpending,
 }: WalletCardProps) {
-  const { isFun, label } = useMode();
-
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <Wallet className="w-4 h-4" />
-          {label("My Wallet", "Wallet")}
+          Wallet
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -40,11 +37,6 @@ export function WalletCard({
             Week: {formatUSDC(weekSpending)}
           </div>
         </div>
-        {isFun && balance < 1 && (
-          <p className="text-xs text-yellow-600 mt-2">
-            Running a bit low! Consider topping up my wallet.
-          </p>
-        )}
       </CardContent>
     </Card>
   );

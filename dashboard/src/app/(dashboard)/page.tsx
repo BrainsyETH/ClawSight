@@ -2,14 +2,12 @@
 
 import { useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useMode } from "@/hooks/use-mode";
 import { useAgentStatus } from "@/hooks/use-agent-status";
 import { useWalletBalance } from "@/hooks/use-wallet-balance";
 import {
   useActivityEvents,
   useSkillConfigs,
 } from "@/hooks/use-supabase-data";
-import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { StatusIndicator } from "@/components/shared/status-indicator";
 import { WalletCard } from "@/components/dashboard/wallet-card";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
@@ -109,7 +107,6 @@ function deriveMemories(events: ActivityEvent[]): MemoryEntry[] {
 
 export default function DashboardPage() {
   const { walletAddress } = useAuth();
-  const { isFun, label, agentName } = useMode();
   const agentStatus = useAgentStatus(walletAddress ?? undefined);
   const { balance: walletBalance } = useWalletBalance(walletAddress);
   const { events, loading: eventsLoading, redactEvent, redactEventFields } = useActivityEvents(walletAddress ?? undefined);
@@ -143,17 +140,12 @@ export default function DashboardPage() {
       {/* Agent greeting / header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          {isFun && <AgentAvatar size="lg" />}
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
-              {isFun
-                ? `Hi! I'm ${agentName}.`
-                : "Dashboard"}
+              Dashboard
             </h1>
             <p className="text-gray-500 mt-1">
-              {isFun
-                ? "Here's what I've been up to today!"
-                : "Agent overview and recent activity"}
+              Agent overview and recent activity
             </p>
           </div>
         </div>
@@ -164,7 +156,7 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
-              {label("How I'm Doing", "Status")}
+              Status
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -185,10 +177,10 @@ export default function DashboardPage() {
       {/* Quick stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: label("Skills I Know", "Active Skills"), value: String(activeSkills.length), subtext: `${pausedSkills.length} paused` },
-          { label: label("Things Done Today", "Actions Today"), value: String(todayActions), subtext: `${todayEvents.length} total events` },
-          { label: label("Messages Sent", "Messages"), value: String(todayMessages), subtext: "today" },
-          { label: label("Errors Caught", "Errors"), value: String(todayErrors), subtext: todayErrors === 0 ? "All clear!" : "Check activity" },
+          { label: "Active Skills", value: String(activeSkills.length), subtext: `${pausedSkills.length} paused` },
+          { label: "Actions Today", value: String(todayActions), subtext: `${todayEvents.length} total events` },
+          { label: "Messages", value: String(todayMessages), subtext: "today" },
+          { label: "Errors", value: String(todayErrors), subtext: todayErrors === 0 ? "All clear!" : "Check activity" },
         ].map((stat) => (
           <Card key={stat.label}>
             <CardContent className="p-4">

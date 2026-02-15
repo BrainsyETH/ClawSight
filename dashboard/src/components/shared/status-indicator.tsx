@@ -1,7 +1,6 @@
 "use client";
 
 import { AgentStatus } from "@/types";
-import { useMode } from "@/hooks/use-mode";
 import { cn, getStatusColor, timeAgo, formatDuration } from "@/lib/utils";
 
 interface StatusIndicatorProps {
@@ -10,14 +9,7 @@ interface StatusIndicatorProps {
   sessionDurationMs: number | null;
 }
 
-const STATUS_LABELS_FUN: Record<AgentStatus, string> = {
-  online: "I'm here and ready!",
-  thinking: "Hmm, let me think...",
-  idle: "Taking a little break",
-  offline: "I'm not running right now",
-};
-
-const STATUS_LABELS_PRO: Record<AgentStatus, string> = {
+const STATUS_LABELS: Record<AgentStatus, string> = {
   online: "Online",
   thinking: "Processing",
   idle: "Idle",
@@ -29,14 +21,11 @@ export function StatusIndicator({
   lastHeartbeat,
   sessionDurationMs,
 }: StatusIndicatorProps) {
-  const { isFun } = useMode();
-  const labels = isFun ? STATUS_LABELS_FUN : STATUS_LABELS_PRO;
-
   return (
     <div className="flex items-center gap-3">
       <div className={cn("w-3 h-3 rounded-full", getStatusColor(status))} />
       <div>
-        <p className="text-sm font-medium text-gray-900">{labels[status]}</p>
+        <p className="text-sm font-medium text-gray-900">{STATUS_LABELS[status]}</p>
         <div className="flex items-center gap-2 text-xs text-gray-500">
           {lastHeartbeat && <span>Last seen {timeAgo(lastHeartbeat)}</span>}
           {sessionDurationMs && (

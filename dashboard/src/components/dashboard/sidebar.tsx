@@ -2,57 +2,50 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMode } from "@/hooks/use-mode";
 import { useAuth } from "@/hooks/use-auth";
 import { useEns, formatAddressOrEns } from "@/hooks/use-ens";
 import { useWalletBalance } from "@/hooks/use-wallet-balance";
-import { AgentAvatar } from "@/components/shared/agent-avatar";
-import { cn, truncateAddress } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
   Zap,
   Compass,
   User,
   Settings,
+  LogOut,
 } from "lucide-react";
 
 const NAV_ITEMS = [
   {
     href: "/",
     icon: LayoutDashboard,
-    funLabel: "Home",
-    proLabel: "Dashboard",
+    label: "Dashboard",
   },
   {
     href: "/skills",
     icon: Zap,
-    funLabel: "My Skills",
-    proLabel: "Skills",
+    label: "Skills",
   },
   {
     href: "/learn",
     icon: Compass,
-    funLabel: "Learn New Skills",
-    proLabel: "Browse Skills",
+    label: "Browse Skills",
   },
   {
     href: "/character",
     icon: User,
-    funLabel: "Customize Me",
-    proLabel: "Agent Settings",
+    label: "Agent Settings",
   },
   {
     href: "/settings",
     icon: Settings,
-    funLabel: "Settings",
-    proLabel: "Settings",
+    label: "Settings",
   },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { isFun, agentName } = useMode();
-  const { walletAddress } = useAuth();
+  const { walletAddress, disconnect } = useAuth();
   const { name: ensName } = useEns(walletAddress);
   const { balance } = useWalletBalance(walletAddress);
 
@@ -63,10 +56,12 @@ export function Sidebar() {
         {/* Brand */}
         <div className="p-6 border-b border-gray-100">
           <Link href="/" className="flex items-center gap-3">
-            <AgentAvatar size="sm" />
+            <div className="w-8 h-8 rounded-full flex items-center justify-center bg-gray-100 text-gray-600 font-bold text-lg">
+              C
+            </div>
             <div>
               <h1 className="font-bold text-gray-900">ClawSight</h1>
-              <p className="text-xs text-gray-500">{agentName}</p>
+              <p className="text-xs text-gray-500">Agent Dashboard</p>
             </div>
           </Link>
         </div>
@@ -90,7 +85,7 @@ export function Sidebar() {
                 )}
               >
                 <item.icon className="w-4 h-4" />
-                {isFun ? item.funLabel : item.proLabel}
+                {item.label}
               </Link>
             );
           })}
@@ -117,6 +112,17 @@ export function Sidebar() {
             )}
           </div>
         </div>
+
+        {/* Sign Out */}
+        <div className="p-4 border-t border-gray-100">
+          <button
+            onClick={disconnect}
+            className="flex items-center gap-2 px-3 py-2 w-full rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign Out
+          </button>
+        </div>
       </aside>
 
       {/* Mobile bottom navigation - visible only on mobile */}
@@ -127,7 +133,6 @@ export function Sidebar() {
               item.href === "/"
                 ? pathname === "/"
                 : pathname.startsWith(item.href);
-            const label = isFun ? item.funLabel : item.proLabel;
             return (
               <Link
                 key={item.href}
@@ -139,7 +144,7 @@ export function Sidebar() {
               >
                 <item.icon className="w-5 h-5" />
                 <span className="text-[10px] font-medium leading-tight truncate max-w-full">
-                  {label}
+                  {item.label}
                 </span>
               </Link>
             );

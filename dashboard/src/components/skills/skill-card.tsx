@@ -1,7 +1,6 @@
 "use client";
 
 import { SkillConfig } from "@/types";
-import { useMode } from "@/hooks/use-mode";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SyncBadge } from "@/components/shared/sync-badge";
@@ -15,12 +14,9 @@ interface SkillCardProps {
 }
 
 export function SkillCard({ skill, onToggle }: SkillCardProps) {
-  const { isFun } = useMode();
   const form = getSkillForm(skill.skill_slug);
   const name = form?.name || skill.skill_slug;
-  const description = isFun
-    ? form?.funDescription || `${skill.skill_slug} skill`
-    : form?.description || `${skill.skill_slug} skill`;
+  const description = form?.description || `${skill.skill_slug} skill`;
 
   return (
     <Card className="group hover:shadow-md transition-shadow">
