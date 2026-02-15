@@ -1,48 +1,117 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useAuth } from "@/hooks/use-auth";
 import { useMode } from "@/hooks/use-mode";
+import { useSkillConfigs } from "@/hooks/use-supabase-data";
+import { useEncryption } from "@/hooks/use-encryption";
 import { getSkillForm, getDefaultConfig } from "@/lib/skill-forms";
 import { SkillConfigForm } from "@/components/skills/skill-config-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SyncBadge } from "@/components/shared/sync-badge";
-import { ArrowLeft, Code } from "lucide-react";
+import { ArrowLeft, Code, Loader2 } from "lucide-react";
 import { SyncStatus } from "@/types";
 
 export default function SkillConfigPage() {
   const params = useParams();
   const router = useRouter();
+  const { walletAddress, signMessage } = useAuth();
   const { label } = useMode();
+  const { configs, loading, saveConfig } = useSkillConfigs(walletAddress ?? undefined);
+  const { ready: encryptionReady, initEncryption, encryptConfig, decryptConfig } = useEncryption();
   const slug = params.slug as string;
   const form = getSkillForm(slug);
 
+  // Find existing config for this skill
+  const existingConfig = configs.find((c) => c.skill_slug === slug);
+
   const [saving, setSaving] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>("applied");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(
+    existingConfig?.sync_status || "applied"
+  );
   const [jsonMode, setJsonMode] = useState(!form);
   const [jsonValue, setJsonValue] = useState(
-    JSON.stringify(form ? getDefaultConfig(slug) : {}, null, 2)
+    JSON.stringify(existingConfig?.config || (form ? getDefaultConfig(slug) : {}), null, 2)
   );
+  const [initialValues, setInitialValues] = useState<Record<string, unknown>>(
+    existingConfig?.config || (form ? getDefaultConfig(slug) || {} : {})
+  );
+
+  // Init encryption for secret fields when form has them
+  useEffect(() => {
+    const hasSecrets = form?.fields.some((f) => f.type === "secret");
+    if (hasSecrets && !encryptionReady && walletAddress) {
+      initEncryption(signMessage);
+    }
+  }, [form, encryptionReady, walletAddress, initEncryption, signMessage]);
+
+  // Decrypt existing config if it has encrypted values
+  useEffect(() => {
+    if (!existingConfig || !form || !encryptionReady) return;
+
+    async function decrypt() {
+      try {
+        const decrypted = await decryptConfig(form!.fields, existingConfig!.config);
+        setInitialValues(decrypted);
+        setJsonValue(JSON.stringify(decrypted, null, 2));
+      } catch {
+        // Decryption failed — use raw values
+        setInitialValues(existingConfig!.config);
+      }
+    }
+    decrypt();
+  }, [existingConfig, form, encryptionReady, decryptConfig]);
+
+  // Update sync status from realtime updates
+  useEffect(() => {
+    if (existingConfig) {
+      setSyncStatus(existingConfig.sync_status);
+    }
+  }, [existingConfig?.sync_status, existingConfig]);
 
   const handleSave = async (values: Record<string, unknown>) => {
     setSaving(true);
+    setSaveError(null);
     setSyncStatus("syncing");
-    // In production: POST to /v1/api/config
-    await new Promise((r) => setTimeout(r, 1500));
-    setSaving(false);
-    setSyncStatus("applied");
+    try {
+      // Encrypt secret fields before sending
+      let configToSave = values;
+      if (form && encryptionReady) {
+        configToSave = await encryptConfig(form.fields, values);
+      }
+
+      await saveConfig(slug, configToSave, existingConfig?.updated_at);
+      setSyncStatus("pending");
+    } catch (err) {
+      setSyncStatus("failed");
+      setSaveError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleJsonSave = async () => {
     try {
       const parsed = JSON.parse(jsonValue);
       await handleSave(parsed);
-    } catch {
-      alert("Invalid JSON");
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        setSaveError("Invalid JSON");
+      }
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -82,11 +151,17 @@ export default function SkillConfigPage() {
         )}
       </div>
 
+      {saveError && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          {saveError}
+        </div>
+      )}
+
       {/* Form or JSON editor */}
       {form && !jsonMode ? (
         <SkillConfigForm
           definition={form}
-          initialValues={getDefaultConfig(slug)}
+          initialValues={initialValues}
           onSave={handleSave}
           saving={saving}
         />

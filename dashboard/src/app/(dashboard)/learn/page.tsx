@@ -1,27 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useMode } from "@/hooks/use-mode";
+import { useSkillConfigs } from "@/hooks/use-supabase-data";
 import { SkillBrowser } from "@/components/skills/skill-browser";
 import { Compass } from "lucide-react";
+import { getDefaultConfig } from "@/lib/skill-forms";
 
 export default function LearnPage() {
+  const { walletAddress } = useAuth();
   const { label } = useMode();
-  const [installedSlugs] = useState([
-    "web_search",
-    "memory",
-    "slack",
-    "github",
-    "crypto_trading",
-    "pdf",
-  ]);
+  const { configs, saveConfig } = useSkillConfigs(walletAddress ?? undefined);
   const [installing, setInstalling] = useState<string | null>(null);
+
+  // Derive installed slugs from real skill configs
+  const installedSlugs = useMemo(
+    () => configs.map((c) => c.skill_slug),
+    [configs]
+  );
 
   const handleInstall = async (slug: string) => {
     setInstalling(slug);
-    // In production: trigger clawhub install via plugin
-    await new Promise((r) => setTimeout(r, 2000));
-    setInstalling(null);
+    try {
+      // Create a new skill config entry with defaults
+      const defaults = getDefaultConfig(slug) || {};
+      await saveConfig(slug, defaults);
+    } catch (err) {
+      console.error("[learn] Install failed:", err);
+    } finally {
+      setInstalling(null);
+    }
   };
 
   return (

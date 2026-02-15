@@ -28,9 +28,10 @@ const COLOR_PRESETS = [
 
 interface CharacterEditorProps {
   onSave?: () => void;
+  saving?: boolean;
 }
 
-export function CharacterEditor({ onSave }: CharacterEditorProps) {
+export function CharacterEditor({ onSave, saving }: CharacterEditorProps) {
   const {
     mode,
     setMode,
@@ -185,8 +186,8 @@ export function CharacterEditor({ onSave }: CharacterEditorProps) {
       </Card>
 
       {onSave && (
-        <Button onClick={onSave} className="w-full" size="lg">
-          Save Changes
+        <Button onClick={onSave} disabled={saving} className="w-full" size="lg">
+          {saving ? "Saving..." : "Save Changes"}
         </Button>
       )}
     </div>

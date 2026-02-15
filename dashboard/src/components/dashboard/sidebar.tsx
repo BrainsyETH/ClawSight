@@ -103,7 +103,9 @@ export function Sidebar() {
                 ? formatAddressOrEns(walletAddress, ensName)
                 : "Not connected"}
             </p>
-            <p className="text-xs text-green-600 font-medium mt-1">$12.47 USDC</p>
+            {walletAddress && (
+              <p className="text-xs text-green-600 font-medium mt-1">Connected</p>
+            )}
           </div>
         </div>
       </aside>

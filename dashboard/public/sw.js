@@ -26,6 +26,50 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+// Push: show notification when a push event arrives
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+
+  try {
+    const data = event.data.json();
+    const title = data.title || "ClawSight";
+    const options = {
+      body: data.body || "",
+      icon: "/file.svg",
+      badge: "/file.svg",
+      tag: data.tag || "clawsight-notification",
+      data: { url: data.url || "/" },
+    };
+
+    event.waitUntil(self.registration.showNotification(title, options));
+  } catch {
+    // Non-JSON payload
+    event.waitUntil(
+      self.registration.showNotification("ClawSight", {
+        body: event.data.text(),
+      })
+    );
+  }
+});
+
+// Notification click: open the app
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/";
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window" }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && "focus" in client) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    })
+  );
+});
+
 // Fetch: network-first for API, cache-fallback for static assets
 self.addEventListener("fetch", (event) => {
   const { request } = event;
