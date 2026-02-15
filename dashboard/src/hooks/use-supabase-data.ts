@@ -4,7 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase";
 import { SkillConfig, ActivityEvent, AgentStatusRow, User } from "@/types";
 
-const supabase = createClient();
+let _supabase: ReturnType<typeof createClient> | null = null;
+function getSupabase() {
+  if (!_supabase) _supabase = createClient();
+  return _supabase;
+}
 
 // ============================================================
 // User profile
@@ -21,7 +25,7 @@ export function useUser(walletAddress?: string) {
     }
 
     async function fetch() {
-      const { data } = await supabase
+      const { data } = await getSupabase()
         .from("users")
         .select("*")
         .eq("wallet_address", walletAddress)
@@ -35,7 +39,7 @@ export function useUser(walletAddress?: string) {
   const updateUser = useCallback(
     async (updates: Partial<User>) => {
       if (!walletAddress) return;
-      const { data } = await supabase
+      const { data } = await getSupabase()
         .from("users")
         .update(updates)
         .eq("wallet_address", walletAddress)
@@ -65,7 +69,7 @@ export function useSkillConfigs(walletAddress?: string) {
 
     // Initial fetch
     async function fetch() {
-      const { data } = await supabase
+      const { data } = await getSupabase()
         .from("skill_configs")
         .select("*")
         .eq("wallet_address", walletAddress)
@@ -76,7 +80,7 @@ export function useSkillConfigs(walletAddress?: string) {
     fetch();
 
     // Real-time subscription for config changes
-    const channel = supabase
+    const channel = getSupabase()
       .channel("skill_configs_changes")
       .on(
         "postgres_changes",
@@ -107,7 +111,7 @@ export function useSkillConfigs(walletAddress?: string) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      getSupabase().removeChannel(channel);
     };
   }, [walletAddress]);
 
@@ -194,7 +198,7 @@ export function useActivityEvents(walletAddress?: string) {
     }
 
     async function fetch() {
-      const { data } = await supabase
+      const { data } = await getSupabase()
         .from("activity_events")
         .select("*", { count: "exact" })
         .eq("wallet_address", walletAddress)
@@ -207,7 +211,7 @@ export function useActivityEvents(walletAddress?: string) {
     fetch();
 
     // Real-time: new events
-    const channel = supabase
+    const channel = getSupabase()
       .channel("activity_events_new")
       .on(
         "postgres_changes",
@@ -225,7 +229,7 @@ export function useActivityEvents(walletAddress?: string) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      getSupabase().removeChannel(channel);
     };
   }, [walletAddress]);
 
@@ -276,7 +280,7 @@ export function useRealtimeAgentStatus(walletAddress?: string) {
     if (!walletAddress) return;
 
     async function fetch() {
-      const { data } = await supabase
+      const { data } = await getSupabase()
         .from("agent_status")
         .select("*")
         .eq("wallet_address", walletAddress)
@@ -285,7 +289,7 @@ export function useRealtimeAgentStatus(walletAddress?: string) {
     }
     fetch();
 
-    const channel = supabase
+    const channel = getSupabase()
       .channel("agent_status_changes")
       .on(
         "postgres_changes",
@@ -302,7 +306,7 @@ export function useRealtimeAgentStatus(walletAddress?: string) {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      getSupabase().removeChannel(channel);
     };
   }, [walletAddress]);
 

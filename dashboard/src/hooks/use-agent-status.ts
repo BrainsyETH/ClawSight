@@ -4,7 +4,11 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase";
 import { AgentStatus, AgentStatusRow } from "@/types";
 
-const supabase = createClient();
+let _supabase: ReturnType<typeof createClient> | null = null;
+function getSupabase() {
+  if (!_supabase) _supabase = createClient();
+  return _supabase;
+}
 
 interface AgentStatusState {
   status: AgentStatus;
@@ -31,7 +35,7 @@ export function useAgentStatus(walletAddress?: string): AgentStatusState {
     if (!walletAddress) return;
 
     async function fetchStatus() {
-      const { data } = await supabase
+      const { data } = await getSupabase()
         .from("agent_status")
         .select("*")
         .eq("wallet_address", walletAddress)
@@ -43,7 +47,7 @@ export function useAgentStatus(walletAddress?: string): AgentStatusState {
     }
     fetchStatus();
 
-    const channel = supabase
+    const channel = getSupabase()
       .channel("agent_status_live")
       .on(
         "postgres_changes",
@@ -60,7 +64,7 @@ export function useAgentStatus(walletAddress?: string): AgentStatusState {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      getSupabase().removeChannel(channel);
     };
   }, [walletAddress]);
 
