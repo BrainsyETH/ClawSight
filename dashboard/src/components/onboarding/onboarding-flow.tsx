@@ -55,6 +55,8 @@ export function OnboardingFlow({
   const [detecting, setDetecting] = useState(false);
   const [detected, setDetected] = useState(false);
   const [detectError, setDetectError] = useState(false);
+  const [gatewayUrl, setGatewayUrl] = useState("http://localhost:3080");
+  const [showCustomUrl, setShowCustomUrl] = useState(false);
   const [agentName, setAgentName] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
@@ -75,22 +77,30 @@ export function OnboardingFlow({
     }
   };
 
-  const handleDetect = async () => {
+  const handleDetect = async (urlOverride?: string) => {
     setDetecting(true);
     setDetectError(false);
+    const url = urlOverride ?? gatewayUrl;
     try {
-      const res = await fetch("http://localhost:3080/health", {
+      // Normalize: strip trailing slash, append /health
+      const base = url.replace(/\/+$/, "");
+      const res = await fetch(`${base}/health`, {
         signal: AbortSignal.timeout(5000),
       }).catch(() => null);
 
       if (res?.ok) {
         setDetected(true);
+        // Persist the working gateway URL for the rest of the app
+        localStorage.setItem("clawsight_gateway_url", base);
         setTimeout(() => setStep("name"), 800);
       } else {
         setDetectError(true);
+        // If localhost failed, show the custom URL input
+        if (!showCustomUrl) setShowCustomUrl(true);
       }
     } catch {
       setDetectError(true);
+      if (!showCustomUrl) setShowCustomUrl(true);
     } finally {
       setDetecting(false);
     }
@@ -260,71 +270,95 @@ export function OnboardingFlow({
               <p className="text-gray-500 mb-6">
                 {detected
                   ? "Your OpenClaw instance is running and ready."
-                  : "ClawSight needs a running OpenClaw instance to control your agent."}
+                  : "Enter your OpenClaw gateway URL, or auto-detect if it\u2019s running locally."}
               </p>
               {detected ? (
-                <div className="flex items-center justify-center gap-2 text-green-600 font-medium">
-                  <CheckCircle className="w-5 h-5" aria-hidden="true" />
-                  Connected to OpenClaw Gateway
+                <div className="space-y-2">
+                  <div className="flex items-center justify-center gap-2 text-green-600 font-medium">
+                    <CheckCircle className="w-5 h-5" aria-hidden="true" />
+                    Connected to OpenClaw Gateway
+                  </div>
+                  <p className="text-xs text-gray-400 font-mono">
+                    {gatewayUrl}
+                  </p>
                 </div>
               ) : (
-                <Button
-                  onClick={handleDetect}
-                  disabled={detecting}
-                  size="lg"
-                  className="w-full gap-2"
-                >
-                  {detecting ? (
-                    <>
-                      <Loader2
-                        className="w-4 h-4 animate-spin"
-                        aria-hidden="true"
-                      />
-                      Scanning...
-                    </>
-                  ) : (
-                    <>
-                      <Search className="w-4 h-4" aria-hidden="true" />
-                      Detect OpenClaw
-                    </>
-                  )}
-                </Button>
+                <div className="space-y-3">
+                  {/* Gateway URL input */}
+                  <div className="text-left">
+                    <label
+                      htmlFor="gateway-url"
+                      className="text-xs font-medium text-gray-600 mb-1 block"
+                    >
+                      Gateway URL
+                    </label>
+                    <Input
+                      id="gateway-url"
+                      value={gatewayUrl}
+                      onChange={(e) => setGatewayUrl(e.target.value)}
+                      placeholder="http://localhost:3080"
+                      className="font-mono text-sm"
+                      aria-label="OpenClaw gateway URL"
+                    />
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      Local: http://localhost:3080 &middot; Remote: http://your-server-ip:3080
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => handleDetect()}
+                    disabled={detecting || !gatewayUrl.trim()}
+                    size="lg"
+                    className="w-full gap-2"
+                  >
+                    {detecting ? (
+                      <>
+                        <Loader2
+                          className="w-4 h-4 animate-spin"
+                          aria-hidden="true"
+                        />
+                        Connecting...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-4 h-4" aria-hidden="true" />
+                        Connect
+                      </>
+                    )}
+                  </Button>
+                </div>
               )}
               {detectError && (
                 <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg text-left">
                   <p className="text-sm font-medium text-amber-800 mb-2">
-                    OpenClaw not detected
+                    Could not reach gateway
                   </p>
-                  <p className="text-sm text-amber-700 mb-4">
-                    No gateway found at localhost:3080. OpenClaw must be running
-                    to continue.
+                  <p className="text-sm text-amber-700 mb-3">
+                    No response from <span className="font-mono text-xs">{gatewayUrl}/health</span>.
+                    Make sure OpenClaw is running and the URL is correct.
                   </p>
-                  <div className="space-y-2 mb-4">
-                    <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                      Install OpenClaw
-                    </p>
-                    <ul className="text-sm text-gray-600 space-y-1.5">
-                      <li className="flex items-start gap-2">
-                        <span className="text-gray-400 mt-0.5">&bull;</span>
-                        <span>
-                          <strong>Mac / Linux:</strong> Install via the official
-                          docs (5 min)
-                        </span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-gray-400 mt-0.5">&bull;</span>
-                        <span>
-                          <strong>Windows:</strong> Use WSL2 (10 min)
-                        </span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-gray-400 mt-0.5">&bull;</span>
-                        <span>
-                          <strong>Cloud:</strong> DigitalOcean 1-click deploy
-                        </span>
-                      </li>
-                    </ul>
-                  </div>
+                  <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
+                    Common fixes
+                  </p>
+                  <ul className="text-sm text-gray-600 space-y-1.5 mb-4">
+                    <li className="flex items-start gap-2">
+                      <span className="text-gray-400 mt-0.5">&bull;</span>
+                      <span>
+                        Check that your OpenClaw instance is running
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-gray-400 mt-0.5">&bull;</span>
+                      <span>
+                        For remote machines, use the IP or hostname (e.g. http://192.168.1.100:3080)
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-gray-400 mt-0.5">&bull;</span>
+                      <span>
+                        Ensure port 3080 is open and not blocked by a firewall
+                      </span>
+                    </li>
+                  </ul>
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
@@ -343,7 +377,7 @@ export function OnboardingFlow({
                     <Button
                       size="sm"
                       className="gap-1.5"
-                      onClick={handleDetect}
+                      onClick={() => handleDetect()}
                       disabled={detecting}
                     >
                       <RefreshCw className="w-3 h-3" aria-hidden="true" />
