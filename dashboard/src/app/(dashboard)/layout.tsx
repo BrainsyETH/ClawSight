@@ -73,7 +73,7 @@ function UnauthenticatedBanner() {
       <span className="text-6xl mb-4" aria-hidden="true">&#x1F99E;</span>
       <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome to ClawSight</h2>
       <p className="text-gray-500 mb-6 max-w-md">
-        Connect your wallet to access your dashboard and manage your AI agent.
+        Connect your wallet or create an account to manage your AI agent.
       </p>
       <button
         onClick={handleGoToOnboarding}
