@@ -8,13 +8,18 @@
     "build": "tsc",
     "dev": "tsc --watch"
   },
-  "keywords": ["openclaw", "clawsight", "agent", "dashboard"],
+  "keywords": [
+    "openclaw",
+    "clawsight",
+    "agent",
+    "dashboard"
+  ],
   "license": "MIT",
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0"
   },
   "devDependencies": {
-    "typescript": "^5.3.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.19.33",
+    "typescript": "^5.3.0"
   }
 }

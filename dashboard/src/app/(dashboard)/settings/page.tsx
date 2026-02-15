@@ -1,18 +1,74 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useMode } from "@/hooks/use-mode";
+import { useUser } from "@/hooks/use-supabase-data";
+import { useAgentStatus } from "@/hooks/use-agent-status";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Shield, Database, Bell, Trash2 } from "lucide-react";
+import { Settings, Shield, Database, Bell, Trash2, CheckCircle, Download } from "lucide-react";
 
 export default function SettingsPage() {
+  const { walletAddress } = useAuth();
   const { label } = useMode();
+  const { user, updateUser } = useUser(walletAddress ?? undefined);
+  const agentStatus = useAgentStatus(walletAddress ?? undefined);
+
   const [dailyCap, setDailyCap] = useState("0.10");
   const [monthlyCap, setMonthlyCap] = useState("2.00");
   const [retentionDays, setRetentionDays] = useState("90");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  // Hydrate from DB
+  useEffect(() => {
+    if (user) {
+      setDailyCap(String(user.daily_spend_cap_usdc));
+      setMonthlyCap(String(user.monthly_spend_cap_usdc));
+      setRetentionDays(String(user.data_retention_days));
+    }
+  }, [user]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      await updateUser({
+        daily_spend_cap_usdc: parseFloat(dailyCap),
+        monthly_spend_cap_usdc: parseFloat(monthlyCap),
+        data_retention_days: parseInt(retentionDays),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      console.error("[settings] Save failed:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch("/v1/api/export");
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `clawsight-export-${new Date().toISOString().split("T")[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("[settings] Export failed:", err);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -161,8 +217,10 @@ export default function SettingsPage() {
             <span className="font-mono text-xs">http://localhost:3080</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Connection</span>
-            <Badge variant="success">Connected</Badge>
+            <span className="text-gray-500">Agent status</span>
+            <Badge variant={agentStatus.status === "online" ? "default" : "secondary"}>
+              {agentStatus.status}
+            </Badge>
           </div>
         </CardContent>
       </Card>
@@ -183,8 +241,9 @@ export default function SettingsPage() {
                 Download a copy of all your ClawSight data (GDPR)
               </p>
             </div>
-            <Button variant="outline" size="sm">
-              Export
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
+              <Download className="w-3 h-3 mr-1" />
+              {exporting ? "Exporting..." : "Export"}
             </Button>
           </div>
           <div className="flex items-center justify-between">
@@ -203,9 +262,15 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Button className="w-full" size="lg">
-        Save Settings
+      <Button className="w-full" size="lg" onClick={handleSave} disabled={saving}>
+        {saving ? "Saving..." : saved ? "Saved!" : "Save Settings"}
       </Button>
+      {saved && (
+        <div className="flex items-center justify-center gap-2 text-green-600 text-sm font-medium">
+          <CheckCircle className="w-4 h-4" />
+          Settings saved!
+        </div>
+      )}
     </div>
   );
 }

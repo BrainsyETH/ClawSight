@@ -1,120 +1,33 @@
 "use client";
 
-import { useState } from "react";
-import { SkillConfig } from "@/types";
+import { useAuth } from "@/hooks/use-auth";
 import { useMode } from "@/hooks/use-mode";
+import { useSkillConfigs } from "@/hooks/use-supabase-data";
 import { SkillCard } from "@/components/skills/skill-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
-import { Zap, Plus } from "lucide-react";
+import { Zap, Plus, Loader2 } from "lucide-react";
 import Link from "next/link";
 
-// Demo data — replaced by Supabase queries in production
-const DEMO_SKILLS: SkillConfig[] = [
-  {
-    id: "1",
-    wallet_address: "0x1a2b3c4d",
-    skill_slug: "web_search",
-    enabled: true,
-    config: { provider: "google", max_results: 10, safe_search: true },
-    config_source: "clawsight",
-    config_schema_version: 1,
-    sync_status: "applied",
-    sync_error: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    wallet_address: "0x1a2b3c4d",
-    skill_slug: "slack",
-    enabled: true,
-    config: { default_channel: "#general", respond_to_mentions: true },
-    config_source: "clawsight",
-    config_schema_version: 1,
-    sync_status: "applied",
-    sync_error: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "3",
-    wallet_address: "0x1a2b3c4d",
-    skill_slug: "github",
-    enabled: true,
-    config: { default_owner: "openclaw", auto_review: false },
-    config_source: "manual",
-    config_schema_version: 1,
-    sync_status: "applied",
-    sync_error: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "4",
-    wallet_address: "0x1a2b3c4d",
-    skill_slug: "crypto_trading",
-    enabled: true,
-    config: { exchange: "polymarket", max_trade_size: 25, daily_budget: 50 },
-    config_source: "clawsight",
-    config_schema_version: 1,
-    sync_status: "syncing",
-    sync_error: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "5",
-    wallet_address: "0x1a2b3c4d",
-    skill_slug: "memory",
-    enabled: true,
-    config: { auto_save: true, max_results: 5 },
-    config_source: "default",
-    config_schema_version: 1,
-    sync_status: "applied",
-    sync_error: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "6",
-    wallet_address: "0x1a2b3c4d",
-    skill_slug: "pdf",
-    enabled: false,
-    config: {},
-    config_source: "default",
-    config_schema_version: 1,
-    sync_status: "applied",
-    sync_error: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-];
-
 export default function SkillsPage() {
+  const { walletAddress } = useAuth();
   const { label } = useMode();
-  const [skills, setSkills] = useState(DEMO_SKILLS);
+  const { configs: skills, loading, toggleSkill } = useSkillConfigs(walletAddress ?? undefined);
 
   const enabledSkills = skills.filter((s) => s.enabled);
   const disabledSkills = skills.filter((s) => !s.enabled);
 
   const handleToggle = (slug: string, enabled: boolean) => {
-    setSkills((prev) =>
-      prev.map((s) =>
-        s.skill_slug === slug
-          ? { ...s, enabled, sync_status: "syncing" as const }
-          : s
-      )
-    );
-    // Simulate sync completion
-    setTimeout(() => {
-      setSkills((prev) =>
-        prev.map((s) =>
-          s.skill_slug === slug ? { ...s, sync_status: "applied" as const } : s
-        )
-      );
-    }, 1500);
+    toggleSkill(slug, enabled);
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
 
   if (skills.length === 0) {
     return <EmptyState type="no-skills" onAction={() => {}} />;

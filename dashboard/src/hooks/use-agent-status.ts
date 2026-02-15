@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { AgentStatus } from "@/types";
+import { createClient } from "@/lib/supabase";
+import { AgentStatus, AgentStatusRow } from "@/types";
+
+const supabase = createClient();
 
 interface AgentStatusState {
   status: AgentStatus;
@@ -11,30 +14,83 @@ interface AgentStatusState {
   sessionDurationMs: number | null;
 }
 
-// In production, this subscribes to Supabase Realtime.
-// For now, returns demo state.
-export function useAgentStatus(_walletAddress?: string): AgentStatusState {
+/**
+ * Subscribe to real-time agent status updates via Supabase.
+ * Falls back to "offline" if no status row exists.
+ */
+export function useAgentStatus(walletAddress?: string): AgentStatusState {
   const [state, setState] = useState<AgentStatusState>({
-    status: "online",
-    lastHeartbeat: new Date().toISOString(),
-    sessionId: "sess_demo_001",
-    sessionStart: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
-    sessionDurationMs: 4 * 60 * 60 * 1000,
+    status: "offline",
+    lastHeartbeat: null,
+    sessionId: null,
+    sessionStart: null,
+    sessionDurationMs: null,
   });
 
-  // Simulate heartbeat updates
   useEffect(() => {
+    if (!walletAddress) return;
+
+    async function fetchStatus() {
+      const { data } = await supabase
+        .from("agent_status")
+        .select("*")
+        .eq("wallet_address", walletAddress)
+        .single();
+
+      if (data) {
+        applyStatusRow(data as AgentStatusRow);
+      }
+    }
+    fetchStatus();
+
+    const channel = supabase
+      .channel("agent_status_live")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "agent_status",
+          filter: `wallet_address=eq.${walletAddress}`,
+        },
+        (payload) => {
+          applyStatusRow(payload.new as AgentStatusRow);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [walletAddress]);
+
+  // Update session duration every 30s while online
+  useEffect(() => {
+    if (state.status === "offline" || !state.sessionStart) return;
+
     const interval = setInterval(() => {
       setState((prev) => ({
         ...prev,
-        lastHeartbeat: new Date().toISOString(),
         sessionDurationMs: prev.sessionStart
           ? Date.now() - new Date(prev.sessionStart).getTime()
           : null,
       }));
-    }, 30000);
+    }, 30_000);
+
     return () => clearInterval(interval);
-  }, []);
+  }, [state.status, state.sessionStart]);
+
+  function applyStatusRow(row: AgentStatusRow) {
+    setState({
+      status: row.status,
+      lastHeartbeat: row.last_heartbeat,
+      sessionId: row.session_id,
+      sessionStart: row.session_start,
+      sessionDurationMs: row.session_start
+        ? Date.now() - new Date(row.session_start).getTime()
+        : null,
+    });
+  }
 
   return state;
 }

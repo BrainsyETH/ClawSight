@@ -25,6 +25,8 @@ export class ConfigSync {
   private fileWatcher: fs.FSWatcher | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private lastKnownHash: string = "";
+  /** Track the last-applied timestamp per skill to avoid redundant applies. */
+  private lastAppliedTimestamps: Map<string, string> = new Map();
 
   constructor(api: ApiClient, apiEndpoint: string) {
     this.api = api;
@@ -118,10 +120,48 @@ export class ConfigSync {
       if (newHash !== this.lastKnownHash) {
         this.lastKnownHash = newHash;
         console.log("[ClawSight] Local config changed, syncing to dashboard...");
-        // TODO: Read changed skills and POST to ClawSight API
-        // Local file always wins in a conflict
+        await this.syncLocalToDashboard();
       }
     });
+  }
+
+  /**
+   * Read local openclaw.json and push any skill configs back to the dashboard.
+   * Local file always wins in a conflict.
+   */
+  private async syncLocalToDashboard(): Promise<void> {
+    try {
+      const config = this.readOpenClawConfig();
+      if (!config?.skills) return;
+
+      const skills = config.skills as Record<string, Record<string, unknown>>;
+
+      for (const [slug, skillConfig] of Object.entries(skills)) {
+        if (typeof skillConfig !== "object" || skillConfig === null) continue;
+
+        try {
+          const res = await fetch(`${this.apiEndpoint}/v1/api/config`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              skill_slug: slug,
+              config: skillConfig,
+              config_source: "manual",
+            }),
+          });
+
+          if (res.ok) {
+            console.log(`[ClawSight] Synced local config for ${slug} to dashboard`);
+          } else {
+            console.warn(`[ClawSight] Failed to sync ${slug} to dashboard: ${res.status}`);
+          }
+        } catch (err) {
+          console.warn(`[ClawSight] Failed to sync ${slug}:`, err);
+        }
+      }
+    } catch (err) {
+      console.error("[ClawSight] Local-to-dashboard sync failed:", err);
+    }
   }
 
   // ----------------------------------------------------------
@@ -136,10 +176,19 @@ export class ConfigSync {
       const slug = config.skill_slug as string;
       const newConfig = config.config as Record<string, unknown>;
       const updatedAt = config.updated_at as string;
+      const syncStatus = config.sync_status as string;
 
-      // Check if dashboard config is newer than what we last applied
-      // TODO: Compare with last-applied timestamp
-      await this.applyConfig(slug, newConfig);
+      // Skip configs that are already applied or don't need syncing
+      if (syncStatus === "applied") continue;
+
+      // Skip if we already applied this version
+      const lastApplied = this.lastAppliedTimestamps.get(slug);
+      if (lastApplied && lastApplied >= updatedAt) continue;
+
+      const success = await this.applyConfig(slug, newConfig);
+      if (success) {
+        this.lastAppliedTimestamps.set(slug, updatedAt);
+      }
     }
   }
 

@@ -1,87 +1,82 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useMode } from "@/hooks/use-mode";
 import { useAgentStatus } from "@/hooks/use-agent-status";
+import {
+  useActivityEvents,
+  useSkillConfigs,
+} from "@/hooks/use-supabase-data";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { StatusIndicator } from "@/components/shared/status-indicator";
 import { WalletCard } from "@/components/dashboard/wallet-card";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
-import { SpendingChart, getDemoSpendingData } from "@/components/dashboard/spending-chart";
+import { SpendingChart } from "@/components/dashboard/spending-chart";
 import { MemoryViewer, getDemoMemories } from "@/components/dashboard/memory-viewer";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Loader2 } from "lucide-react";
 import { ActivityEvent } from "@/types";
 
-// Demo data — replaced by Supabase queries in production
-const DEMO_EVENTS: ActivityEvent[] = [
-  {
-    id: "1",
-    wallet_address: "0x1a2b3c4d",
-    skill_slug: "web_search",
-    session_id: "sess_001",
-    event_type: "tool_call",
-    event_data: { tool: "web_search", query: "USGS water levels Current River", duration_ms: 423 },
-    occurred_at: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    wallet_address: "0x1a2b3c4d",
-    skill_slug: "slack",
-    session_id: "sess_001",
-    event_type: "message_sent",
-    event_data: { platform: "Slack", preview: "Here's the water level data you asked for..." },
-    occurred_at: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "3",
-    wallet_address: "0x1a2b3c4d",
-    skill_slug: null,
-    session_id: "sess_001",
-    event_type: "payment",
-    event_data: { amount: 0.003, service: "ClawRouter", model: "claude-sonnet-4" },
-    occurred_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "4",
-    wallet_address: "0x1a2b3c4d",
-    skill_slug: "crypto_trading",
-    session_id: "sess_001",
-    event_type: "tool_call",
-    event_data: { tool: "polymarket_trade", query: "Copy trade: $12.40 on Politics/Election", duration_ms: 890 },
-    occurred_at: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "5",
-    wallet_address: "0x1a2b3c4d",
-    skill_slug: "github",
-    session_id: "sess_001",
-    event_type: "tool_call",
-    event_data: { tool: "github_pr_review", query: "Reviewed PR #142 on openclaw/gateway", duration_ms: 2340 },
-    occurred_at: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "6",
-    wallet_address: "0x1a2b3c4d",
-    skill_slug: null,
-    session_id: "sess_001",
-    event_type: "error",
-    event_data: { message: "Rate limit exceeded on Weather API (429)" },
-    occurred_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-    created_at: new Date().toISOString(),
-  },
+const SPENDING_COLORS = [
+  "#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899", "#6b7280",
 ];
 
+/**
+ * Derive spending breakdown from payment events.
+ */
+function deriveSpending(events: ActivityEvent[]) {
+  const categoryTotals: Record<string, number> = {};
+  let total = 0;
+
+  for (const e of events) {
+    if (e.event_type === "payment" && typeof e.event_data?.amount === "number") {
+      const category = (e.event_data.service as string) || (e.skill_slug || "Other");
+      categoryTotals[category] = (categoryTotals[category] || 0) + e.event_data.amount;
+      total += e.event_data.amount;
+    }
+  }
+
+  const categories = Object.entries(categoryTotals)
+    .map(([label, amount], i) => ({
+      label,
+      amount,
+      color: SPENDING_COLORS[i % SPENDING_COLORS.length],
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  return { categories, totalSpend: total };
+}
+
 export default function DashboardPage() {
+  const { walletAddress } = useAuth();
   const { isFun, label, agentName } = useMode();
-  const agentStatus = useAgentStatus();
-  const [spendingPeriod, setSpendingPeriod] = useState<"today" | "week" | "month">("today");
-  const demoSpending = getDemoSpendingData();
+  const agentStatus = useAgentStatus(walletAddress ?? undefined);
+  const { events, loading: eventsLoading, redactEvent, redactEventFields } = useActivityEvents(walletAddress ?? undefined);
+  const { configs, loading: configsLoading } = useSkillConfigs(walletAddress ?? undefined);
   const demoMemories = getDemoMemories();
+
+  const spending = useMemo(() => deriveSpending(events), [events]);
+
+  // Derive stats from real data
+  const activeSkills = configs.filter((c) => c.enabled);
+  const pausedSkills = configs.filter((c) => !c.enabled);
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEvents = events.filter((e) => new Date(e.occurred_at) >= todayStart);
+  const todayActions = todayEvents.filter((e) => e.event_type === "tool_call").length;
+  const todayMessages = todayEvents.filter((e) => e.event_type === "message_sent").length;
+  const todayErrors = todayEvents.filter((e) => e.event_type === "error").length;
+
+  const loading = eventsLoading || configsLoading;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -121,19 +116,19 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
         <WalletCard
-          balance={12.47}
-          todaySpending={0.23}
-          weekSpending={1.87}
+          balance={0}
+          todaySpending={spending.totalSpend}
+          weekSpending={spending.totalSpend}
         />
       </div>
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: label("Skills I Know", "Active Skills"), value: "6", subtext: "2 paused" },
-          { label: label("Things Done Today", "Actions Today"), value: "47", subtext: "+12 from yesterday" },
-          { label: label("Messages Sent", "Messages"), value: "8", subtext: "Slack, Discord" },
-          { label: label("Errors Caught", "Errors"), value: "1", subtext: "Rate limit (resolved)" },
+          { label: label("Skills I Know", "Active Skills"), value: String(activeSkills.length), subtext: `${pausedSkills.length} paused` },
+          { label: label("Things Done Today", "Actions Today"), value: String(todayActions), subtext: `${todayEvents.length} total events` },
+          { label: label("Messages Sent", "Messages"), value: String(todayMessages), subtext: "today" },
+          { label: label("Errors Caught", "Errors"), value: String(todayErrors), subtext: todayErrors === 0 ? "All clear!" : "Check activity" },
         ].map((stat) => (
           <Card key={stat.label}>
             <CardContent className="p-4">
@@ -149,13 +144,17 @@ export default function DashboardPage() {
 
       {/* Spending breakdown */}
       <SpendingChart
-        categories={demoSpending.categories}
-        totalSpend={demoSpending.totalSpend}
-        period={spendingPeriod}
+        categories={spending.categories}
+        totalSpend={spending.totalSpend}
+        period="today"
       />
 
       {/* Activity Feed */}
-      <ActivityFeed events={DEMO_EVENTS} />
+      <ActivityFeed
+        events={events}
+        onRedactEvent={redactEvent}
+        onRedactFields={redactEventFields}
+      />
 
       {/* Memory Viewer */}
       <MemoryViewer memories={demoMemories} />

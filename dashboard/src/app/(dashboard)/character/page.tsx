@@ -1,15 +1,36 @@
 "use client";
 
+import { useState } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import { useMode } from "@/hooks/use-mode";
+import { useUser } from "@/hooks/use-supabase-data";
 import { CharacterEditor } from "@/components/character/character-editor";
-import { User } from "lucide-react";
+import { User, CheckCircle } from "lucide-react";
 
 export default function CharacterPage() {
-  const { label } = useMode();
+  const { walletAddress } = useAuth();
+  const { label, mode, agentName, avatarStyle, avatarColor } = useMode();
+  const { updateUser } = useUser(walletAddress ?? undefined);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
-    // In production: PATCH /v1/api/users
-    alert("Character saved! (demo)");
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      await updateUser({
+        display_mode: mode,
+        agent_name: agentName,
+        avatar_style: avatarStyle,
+        avatar_color: avatarColor,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      console.error("[character] Save failed:", err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -26,7 +47,13 @@ export default function CharacterPage() {
           )}
         </p>
       </div>
-      <CharacterEditor onSave={handleSave} />
+      <CharacterEditor onSave={handleSave} saving={saving} />
+      {saved && (
+        <div className="flex items-center gap-2 text-green-600 text-sm font-medium">
+          <CheckCircle className="w-4 h-4" />
+          Changes saved!
+        </div>
+      )}
     </div>
   );
 }

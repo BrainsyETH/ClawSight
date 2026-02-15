@@ -9,6 +9,17 @@ export interface ActivityEventPayload {
 }
 
 /**
+ * Wallet signer interface for x402 payments.
+ * Implemented by the OpenClaw wallet integration.
+ */
+export interface WalletSigner {
+  /** Sign a USDC transfer on Base L2 and return the signed transaction hex. */
+  signUSDCTransfer(recipient: string, amountUsd: number): Promise<string>;
+  /** Get the wallet address. */
+  getAddress(): string;
+}
+
+/**
  * x402-aware HTTP client for the ClawSight API.
  *
  * Handles:
@@ -19,10 +30,19 @@ export interface ActivityEventPayload {
 export class ApiClient {
   private baseUrl: string;
   private retry: RetryConfig;
+  private walletSigner: WalletSigner | null = null;
 
   constructor(baseUrl: string, retry: RetryConfig) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.retry = retry;
+  }
+
+  /**
+   * Set the wallet signer for x402 payments.
+   * Must be called after OpenClaw provides wallet access.
+   */
+  setWalletSigner(signer: WalletSigner): void {
+    this.walletSigner = signer;
   }
 
   async syncEvents(events: ActivityEventPayload[]): Promise<boolean> {
@@ -37,7 +57,8 @@ export class ApiClient {
   }
 
   async getSkillConfigs(): Promise<Record<string, unknown>[] | null> {
-    return this.get("/v1/api/skills");
+    const result = await this.get<{ configs: Record<string, unknown>[] }>("/v1/api/config");
+    return result?.configs || null;
   }
 
   async updateConfigSyncStatus(
@@ -146,20 +167,61 @@ export class ApiClient {
 
   /**
    * Sign an x402 payment using the agent's wallet.
-   * In production, this reads the wallet key and signs a USDC transfer on Base L2.
+   *
+   * x402 flow:
+   * 1. Server responds with 402 + X-Payment-Required header
+   * 2. Header format: "USDC <amount> <recipient_address>"
+   * 3. Client signs a USDC transfer on Base L2
+   * 4. Client retries request with X-Payment header containing signed tx
    */
   private async signPayment(response: Response): Promise<string | null> {
-    const price = response.headers.get("X-Payment-Required");
-    if (!price) return null;
+    const paymentHeader = response.headers.get("X-Payment-Required");
+    if (!paymentHeader) return null;
 
-    // TODO: Integrate with OpenClaw wallet to sign actual USDC payment
-    // This is a placeholder for the x402 signing flow:
-    // 1. Parse price from header
-    // 2. Create USDC transfer transaction on Base L2
-    // 3. Sign with agent wallet
-    // 4. Return signed payment proof
-    console.log(`[ClawSight] x402 payment required: ${price}`);
+    if (!this.walletSigner) {
+      console.warn(
+        "[ClawSight] x402 payment required but no wallet signer configured. " +
+        "Payment amount:", paymentHeader
+      );
+      return null;
+    }
 
-    return `x402-signed-payment-placeholder`;
+    try {
+      // Parse "USDC <amount> <recipient>" format
+      const parts = paymentHeader.split(" ");
+      if (parts.length < 3 || parts[0] !== "USDC") {
+        console.error("[ClawSight] Invalid X-Payment-Required format:", paymentHeader);
+        return null;
+      }
+
+      const amount = parseFloat(parts[1]);
+      const recipient = parts[2];
+
+      if (isNaN(amount) || amount <= 0) {
+        console.error("[ClawSight] Invalid payment amount:", parts[1]);
+        return null;
+      }
+
+      console.log(`[ClawSight] Signing x402 payment: $${amount} USDC to ${recipient}`);
+
+      const signedTx = await this.walletSigner.signUSDCTransfer(recipient, amount);
+
+      // Return payment proof as base64 JSON
+      const proof = {
+        type: "x402-payment",
+        chain: "base",
+        token: "USDC",
+        amount: amount.toString(),
+        recipient,
+        signed_tx: signedTx,
+        payer: this.walletSigner.getAddress(),
+        timestamp: new Date().toISOString(),
+      };
+
+      return Buffer.from(JSON.stringify(proof)).toString("base64");
+    } catch (err) {
+      console.error("[ClawSight] x402 payment signing failed:", err);
+      return null;
+    }
   }
 }
