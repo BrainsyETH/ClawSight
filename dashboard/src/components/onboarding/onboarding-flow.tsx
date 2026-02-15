@@ -54,9 +54,8 @@ export function OnboardingFlow({
   const [connecting, setConnecting] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [detected, setDetected] = useState(false);
-  const [detectError, setDetectError] = useState(false);
+  const [detectError, setDetectError] = useState<"network" | "cors" | false>(false);
   const [gatewayUrl, setGatewayUrl] = useState("http://localhost:3080");
-  const [showCustomUrl, setShowCustomUrl] = useState(false);
   const [agentName, setAgentName] = useState("");
   const [savingName, setSavingName] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
@@ -77,33 +76,53 @@ export function OnboardingFlow({
     }
   };
 
-  const handleDetect = async (urlOverride?: string) => {
+  const handleDetect = async () => {
     setDetecting(true);
     setDetectError(false);
-    const url = urlOverride ?? gatewayUrl;
+    const base = gatewayUrl.replace(/\/+$/, "");
     try {
-      // Normalize: strip trailing slash, append /health
-      const base = url.replace(/\/+$/, "");
+      // Try a normal fetch first — works if OpenClaw sends CORS headers
       const res = await fetch(`${base}/health`, {
         signal: AbortSignal.timeout(5000),
-      }).catch(() => null);
-
-      if (res?.ok) {
-        setDetected(true);
-        // Persist the working gateway URL for the rest of the app
-        localStorage.setItem("clawsight_gateway_url", base);
-        setTimeout(() => setStep("name"), 800);
-      } else {
-        setDetectError(true);
-        // If localhost failed, show the custom URL input
-        if (!showCustomUrl) setShowCustomUrl(true);
+      });
+      if (res.ok) {
+        confirmGateway(base);
+        return;
       }
+      setDetectError("network");
     } catch {
-      setDetectError(true);
-      if (!showCustomUrl) setShowCustomUrl(true);
+      // Fetch failed — could be CORS or the server is actually down.
+      // Try a no-cors fetch to distinguish: an opaque response means
+      // the server IS reachable but blocking cross-origin reads (CORS).
+      try {
+        const probe = await fetch(`${base}/health`, {
+          mode: "no-cors",
+          signal: AbortSignal.timeout(5000),
+        });
+        // opaque response → server responded but CORS blocked it
+        if (probe.type === "opaque") {
+          setDetectError("cors");
+        } else {
+          setDetectError("network");
+        }
+      } catch {
+        // Both failed → server is genuinely unreachable
+        setDetectError("network");
+      }
     } finally {
       setDetecting(false);
     }
+  };
+
+  const confirmGateway = (base: string) => {
+    setDetected(true);
+    localStorage.setItem("clawsight_gateway_url", base);
+    setTimeout(() => setStep("name"), 800);
+  };
+
+  const handleManualConfirm = () => {
+    const base = gatewayUrl.replace(/\/+$/, "");
+    confirmGateway(base);
   };
 
   const handleSaveName = async () => {
@@ -327,14 +346,64 @@ export function OnboardingFlow({
                   </Button>
                 </div>
               )}
-              {detectError && (
+              {/* CORS: server is reachable but browser blocks the response */}
+              {detectError === "cors" && (
+                <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg text-left">
+                  <div className="flex items-start gap-2 mb-3">
+                    <CheckCircle className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-medium text-green-800">
+                        Gateway detected
+                      </p>
+                      <p className="text-sm text-green-700 mt-1">
+                        Something is running at{" "}
+                        <span className="font-mono text-xs">
+                          {gatewayUrl}
+                        </span>
+                        , but your browser blocked the full response (CORS).
+                        This is normal for local and remote gateways.
+                      </p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-600 mb-3">
+                    If you&apos;re sure this is your OpenClaw instance, confirm
+                    below to continue.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={handleManualConfirm}
+                    >
+                      <CheckCircle className="w-3 h-3" aria-hidden="true" />
+                      Confirm &amp; Continue
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={handleDetect}
+                      disabled={detecting}
+                    >
+                      <RefreshCw className="w-3 h-3" aria-hidden="true" />
+                      Retry
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Network error: server genuinely unreachable */}
+              {detectError === "network" && (
                 <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg text-left">
                   <p className="text-sm font-medium text-amber-800 mb-2">
                     Could not reach gateway
                   </p>
                   <p className="text-sm text-amber-700 mb-3">
-                    No response from <span className="font-mono text-xs">{gatewayUrl}/health</span>.
-                    Make sure OpenClaw is running and the URL is correct.
+                    No response from{" "}
+                    <span className="font-mono text-xs">
+                      {gatewayUrl}
+                    </span>
+                    . Make sure OpenClaw is running and the URL is correct.
                   </p>
                   <p className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
                     Common fixes
@@ -349,7 +418,8 @@ export function OnboardingFlow({
                     <li className="flex items-start gap-2">
                       <span className="text-gray-400 mt-0.5">&bull;</span>
                       <span>
-                        For remote machines, use the IP or hostname (e.g. http://192.168.1.100:3080)
+                        For remote machines, use the IP or hostname (e.g.
+                        http://192.168.1.100:3080)
                       </span>
                     </li>
                     <li className="flex items-start gap-2">
@@ -377,7 +447,7 @@ export function OnboardingFlow({
                     <Button
                       size="sm"
                       className="gap-1.5"
-                      onClick={() => handleDetect()}
+                      onClick={handleDetect}
                       disabled={detecting}
                     >
                       <RefreshCw className="w-3 h-3" aria-hidden="true" />
