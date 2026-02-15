@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useMode } from "@/hooks/use-mode";
 import { useSkillConfigs } from "@/hooks/use-supabase-data";
 import { SkillBrowser } from "@/components/skills/skill-browser";
 import { Compass } from "lucide-react";
@@ -10,7 +9,6 @@ import { getDefaultConfig } from "@/lib/skill-forms";
 
 export default function LearnPage() {
   const { walletAddress } = useAuth();
-  const { label } = useMode();
   const { configs, saveConfig } = useSkillConfigs(walletAddress ?? undefined);
   const [installing, setInstalling] = useState<string | null>(null);
 
@@ -38,13 +36,10 @@ export default function LearnPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <Compass className="w-6 h-6" />
-          {label("Teach Me Something New!", "Browse Skills")}
+          Browse Skills
         </h1>
         <p className="text-gray-500 mt-1">
-          {label(
-            "Pick a new skill for me to learn. I'll set it up in seconds!",
-            "Discover and install skills from the ClawHub ecosystem."
-          )}
+          Discover and install skills from the ClawHub ecosystem.
         </p>
       </div>
       <SkillBrowser

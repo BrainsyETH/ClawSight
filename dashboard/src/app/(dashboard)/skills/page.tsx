@@ -1,7 +1,6 @@
 "use client";
 
 import { useAuth } from "@/hooks/use-auth";
-import { useMode } from "@/hooks/use-mode";
 import { useSkillConfigs } from "@/hooks/use-supabase-data";
 import { SkillCard } from "@/components/skills/skill-card";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -11,7 +10,6 @@ import Link from "next/link";
 
 export default function SkillsPage() {
   const { walletAddress } = useAuth();
-  const { label } = useMode();
   const { configs: skills, loading, toggleSkill } = useSkillConfigs(walletAddress ?? undefined);
 
   const enabledSkills = skills.filter((s) => s.enabled);
@@ -39,19 +37,16 @@ export default function SkillsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Zap className="w-6 h-6" />
-            {label("What I Know", "My Skills")}
+            My Skills
           </h1>
           <p className="text-gray-500 mt-1">
-            {label(
-              `I know ${skills.length} skills! Toggle them on and off, or customize how I use them.`,
-              `${skills.length} skills configured. Manage toggles and settings.`
-            )}
+            {skills.length} skills configured. Manage toggles and settings.
           </p>
         </div>
         <Link href="/learn">
           <Button className="gap-2">
             <Plus className="w-4 h-4" />
-            {label("Learn More", "Add Skill")}
+            Add Skill
           </Button>
         </Link>
       </div>
@@ -60,7 +55,7 @@ export default function SkillsPage() {
       {enabledSkills.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-            {label("Things I'm Doing", "Active")} ({enabledSkills.length})
+            Active ({enabledSkills.length})
           </h2>
           <div className="space-y-3">
             {enabledSkills.map((skill) => (
@@ -78,7 +73,7 @@ export default function SkillsPage() {
       {disabledSkills.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-            {label("Things I've Paused", "Inactive")} ({disabledSkills.length})
+            Inactive ({disabledSkills.length})
           </h2>
           <div className="space-y-3">
             {disabledSkills.map((skill) => (

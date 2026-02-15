@@ -1,6 +1,5 @@
 "use client";
 
-import { ModeProvider } from "@/hooks/use-mode";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { useUser } from "@/hooks/use-supabase-data";
 import { Sidebar } from "@/components/dashboard/sidebar";
@@ -20,11 +19,11 @@ export default function DashboardLayout({
 
 /**
  * Inner shell that can access AuthProvider context.
- * Fetches the user profile and hydrates ModeProvider with DB values.
+ * Fetches the user profile so downstream components can use it.
  */
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const { walletAddress, isAuthenticated } = useAuth();
-  const { user, loading } = useUser(walletAddress ?? undefined);
+  const { loading } = useUser(walletAddress ?? undefined);
 
   if (loading) {
     return (
@@ -35,14 +34,12 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ModeProvider initialUser={user ?? undefined}>
-      <div className="flex min-h-screen bg-gray-50">
-        <Sidebar />
-        <main className="flex-1 p-4 md:p-8 pb-20 md:pb-8 max-w-5xl">
-          {!isAuthenticated ? <UnauthenticatedBanner /> : children}
-        </main>
-      </div>
-    </ModeProvider>
+    <div className="flex min-h-screen bg-gray-50">
+      <Sidebar />
+      <main className="flex-1 p-4 md:p-8 pb-20 md:pb-8 max-w-5xl">
+        {!isAuthenticated ? <UnauthenticatedBanner /> : children}
+      </main>
+    </div>
   );
 }
 

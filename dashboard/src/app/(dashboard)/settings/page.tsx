@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { useMode } from "@/hooks/use-mode";
 import { useUser } from "@/hooks/use-supabase-data";
 import { useAgentStatus } from "@/hooks/use-agent-status";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
@@ -16,7 +15,6 @@ import { Settings, Shield, Database, Bell, Trash2, CheckCircle, Download, AlertT
 export default function SettingsPage() {
   const router = useRouter();
   const { walletAddress, disconnect } = useAuth();
-  const { label } = useMode();
   const { user, updateUser } = useUser(walletAddress ?? undefined);
   const agentStatus = useAgentStatus(walletAddress ?? undefined);
   const push = usePushNotifications();
@@ -106,10 +104,7 @@ export default function SettingsPage() {
           Settings
         </h1>
         <p className="text-gray-500 mt-1">
-          {label(
-            "Tweak how I work and manage your preferences!",
-            "System configuration and preferences."
-          )}
+          System configuration and preferences.
         </p>
       </div>
 
@@ -118,13 +113,10 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Shield className="w-4 h-4" />
-            {label("My Spending Limits", "Spending Limits")}
+            Spending Limits
           </CardTitle>
           <CardDescription>
-            {label(
-              "Set limits so I don't spend too much on ClawSight syncing!",
-              "Configure x402 micropayment caps for ClawSight API usage."
-            )}
+            Configure x402 micropayment caps for ClawSight API usage.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -167,10 +159,7 @@ export default function SettingsPage() {
             Data Retention
           </CardTitle>
           <CardDescription>
-            {label(
-              "How long should I keep my activity history?",
-              "Configure how long activity data is stored."
-            )}
+            Configure how long activity data is stored.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -199,13 +188,10 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bell className="w-4 h-4" />
-            {label("Notifications & Sync", "Notifications & Sync")}
+            Notifications & Sync
           </CardTitle>
           <CardDescription>
-            {label(
-              "Control how I notify you and what I sync.",
-              "Manage push notifications and data sync preferences."
-            )}
+            Manage push notifications and data sync preferences.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

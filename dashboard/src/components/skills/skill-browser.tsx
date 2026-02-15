@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { SkillListing, SkillCategory } from "@/types";
-import { useMode } from "@/hooks/use-mode";
 import {
   SKILL_CATALOG,
   CATEGORIES,
@@ -26,7 +25,6 @@ export function SkillBrowser({
   onInstall,
   installing,
 }: SkillBrowserProps) {
-  const { isFun, label } = useMode();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<
     SkillCategory | "all"
@@ -46,11 +44,7 @@ export function SkillBrowser({
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
         <Input
-          placeholder={
-            isFun
-              ? "What should I learn?"
-              : "Search skills..."
-          }
+          placeholder="Search skills..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="pl-9"
@@ -82,7 +76,7 @@ export function SkillBrowser({
       {!searchQuery && selectedCategory === "all" && (
         <div>
           <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-            {label("Skills I Recommend", "Featured")}
+            Featured
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {featured.map((skill) => (
@@ -92,7 +86,6 @@ export function SkillBrowser({
                 installed={installedSlugs.includes(skill.slug)}
                 onInstall={onInstall}
                 installing={installing === skill.slug}
-                isFun={isFun}
                 featured
               />
             ))}
@@ -105,7 +98,7 @@ export function SkillBrowser({
         <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
           {searchQuery
             ? `${allSkills.length} results`
-            : label("All the Things I Can Learn", "All Skills")}
+            : "All Skills"}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {allSkills.map((skill) => (
@@ -115,7 +108,6 @@ export function SkillBrowser({
               installed={installedSlugs.includes(skill.slug)}
               onInstall={onInstall}
               installing={installing === skill.slug}
-              isFun={isFun}
             />
           ))}
         </div>
@@ -129,14 +121,12 @@ function SkillListingCard({
   installed,
   onInstall,
   installing,
-  isFun,
   featured,
 }: {
   skill: SkillListing;
   installed: boolean;
   onInstall: (slug: string) => void;
   installing: boolean;
-  isFun: boolean;
   featured?: boolean;
 }) {
   return (
@@ -184,11 +174,7 @@ function SkillListingCard({
               className="gap-1"
             >
               <Download className="w-3 h-3" />
-              {installing
-                ? "Installing..."
-                : isFun
-                  ? "Learn This!"
-                  : "Install"}
+              {installing ? "Installing..." : "Install"}
             </Button>
           )}
         </div>
