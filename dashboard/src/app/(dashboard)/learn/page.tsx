@@ -6,6 +6,7 @@ import { useSkillConfigs } from "@/hooks/use-supabase-data";
 import { SkillBrowser } from "@/components/skills/skill-browser";
 import { Compass } from "lucide-react";
 import { getDefaultConfig } from "@/lib/skill-forms";
+import { SKILL_CATALOG } from "@/lib/skill-catalog";
 
 export default function LearnPage() {
   const { walletAddress } = useAuth();
@@ -31,15 +32,23 @@ export default function LearnPage() {
     }
   };
 
+  const totalSkills = SKILL_CATALOG.length;
+  const installedCount = installedSlugs.length;
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <Compass className="w-6 h-6" />
-          Browse Skills
+          <Compass className="w-6 h-6" aria-hidden="true" />
+          Skill Store
         </h1>
         <p className="text-gray-500 mt-1">
-          Discover and install skills from the ClawHub ecosystem.
+          {totalSkills} skills available
+          {installedCount > 0 && (
+            <span className="text-gray-400">
+              {" "}&middot; {installedCount} installed
+            </span>
+          )}
         </p>
       </div>
       <SkillBrowser
