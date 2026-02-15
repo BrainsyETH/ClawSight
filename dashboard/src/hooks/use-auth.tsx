@@ -13,11 +13,16 @@ import { injected } from "@wagmi/connectors";
 import { createSiweMessage, generateNonce } from "@/lib/siwe";
 import { createClient } from "@/lib/supabase";
 
+type AuthMethod = "siwe" | "email" | null;
+
 interface AuthContextValue {
   walletAddress: string | null;
   isAuthenticated: boolean;
   isConnecting: boolean;
+  authMethod: AuthMethod;
   connect: () => Promise<void>;
+  signUpWithEmail: (email: string, password: string, walletAddr: string) => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
   disconnect: () => void;
   signMessage: (message: string) => Promise<string>;
 }
@@ -25,13 +30,13 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 /**
- * Auth provider using Sign-In with Ethereum (SIWE) via wagmi.
+ * Auth provider supporting two authentication methods:
  *
- * Flow:
- * 1. User clicks "Sign In" → wagmi connects wallet
- * 2. We create a SIWE message and ask user to sign it
- * 3. Signature + message are sent to Supabase to create a session
- * 4. JWT stored in httpOnly cookie, wallet address stored in context
+ * 1. SIWE (Sign-In with Ethereum) — for power users with existing wallets
+ * 2. Email + password — for normie users, paired with an auto-generated agent wallet
+ *
+ * Both methods store wallet_address in Supabase user_metadata so downstream
+ * code (RLS, API routes) works identically regardless of auth method.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { address, isConnected } = useAccount();
@@ -40,40 +45,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { signMessageAsync } = useSignMessage();
   const [isConnecting, setIsConnecting] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [authMethod, setAuthMethod] = useState<AuthMethod>(null);
 
-  // Sync wagmi state to our context
+  // Sync wagmi state to our context (SIWE users)
   useEffect(() => {
     if (isConnected && address) {
       setWalletAddress(address);
+      setAuthMethod("siwe");
       localStorage.setItem("clawsight_wallet", address);
+      localStorage.setItem("clawsight_auth_method", "siwe");
     }
   }, [isConnected, address]);
 
-  // Restore session on mount
+  // Restore session on mount — check localStorage first, then Supabase session
   useEffect(() => {
     const stored = localStorage.getItem("clawsight_wallet");
+    const method = localStorage.getItem("clawsight_auth_method") as AuthMethod;
     if (stored && !walletAddress) {
       setWalletAddress(stored);
+      setAuthMethod(method || null);
     }
+
+    // Also check Supabase session for email users whose localStorage may be cleared
+    const checkSession = async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.user_metadata?.wallet_address && !stored) {
+        const addr = user.user_metadata.wallet_address as string;
+        setWalletAddress(addr);
+        setAuthMethod("email");
+        localStorage.setItem("clawsight_wallet", addr);
+        localStorage.setItem("clawsight_auth_method", "email");
+      }
+    };
+    checkSession();
   }, [walletAddress]);
 
+  // SIWE connect flow (power users)
   const connect = useCallback(async () => {
     setIsConnecting(true);
     try {
-      // 1. Connect wallet via wagmi
       const result = await connectAsync({ connector: injected() });
       const addr = result.accounts[0];
 
-      // 2. Create and sign SIWE message
       const nonce = generateNonce();
       const siweMessage = createSiweMessage(addr, nonce);
       const message = siweMessage.prepareMessage();
       const signature = await signMessageAsync({ message });
 
-      // 3. Verify with Supabase and create session
       const supabase = createClient();
       const { error } = await supabase.auth.signInWithIdToken({
-        provider: "google" as never, // Supabase custom token - replaced with edge function in production
+        provider: "google" as never,
         token: JSON.stringify({
           message: siweMessage.toMessage(),
           signature,
@@ -85,14 +107,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(`SIWE authentication failed: ${error.message}`);
       }
 
-      // 4. Ensure user row exists
       await supabase.from("users").upsert(
         { wallet_address: addr },
         { onConflict: "wallet_address", ignoreDuplicates: true }
       );
 
       setWalletAddress(addr);
+      setAuthMethod("siwe");
       localStorage.setItem("clawsight_wallet", addr);
+      localStorage.setItem("clawsight_auth_method", "siwe");
     } catch (err) {
       console.error("[auth] Connection failed:", err);
     } finally {
@@ -100,10 +123,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [connectAsync, signMessageAsync]);
 
+  // Email signup flow (new users)
+  const signUpWithEmail = useCallback(async (email: string, password: string, walletAddr: string) => {
+    setIsConnecting(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { wallet_address: walletAddr },
+        },
+      });
+
+      if (error) {
+        throw new Error(`Sign up failed: ${error.message}`);
+      }
+
+      // Create user row with the generated wallet address
+      await supabase.from("users").upsert(
+        { wallet_address: walletAddr },
+        { onConflict: "wallet_address", ignoreDuplicates: true }
+      );
+
+      setWalletAddress(walletAddr);
+      setAuthMethod("email");
+      localStorage.setItem("clawsight_wallet", walletAddr);
+      localStorage.setItem("clawsight_auth_method", "email");
+    } catch (err) {
+      console.error("[auth] Email signup failed:", err);
+      throw err;
+    } finally {
+      setIsConnecting(false);
+    }
+  }, []);
+
+  // Email sign-in flow (returning email users)
+  const signInWithEmail = useCallback(async (email: string, password: string) => {
+    setIsConnecting(true);
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        throw new Error(`Sign in failed: ${error.message}`);
+      }
+
+      const addr = data.user?.user_metadata?.wallet_address as string;
+      if (!addr) {
+        throw new Error("No wallet address associated with this account");
+      }
+
+      setWalletAddress(addr);
+      setAuthMethod("email");
+      localStorage.setItem("clawsight_wallet", addr);
+      localStorage.setItem("clawsight_auth_method", "email");
+    } catch (err) {
+      console.error("[auth] Email signin failed:", err);
+      throw err;
+    } finally {
+      setIsConnecting(false);
+    }
+  }, []);
+
   const disconnect = useCallback(() => {
     wagmiDisconnect();
     setWalletAddress(null);
+    setAuthMethod(null);
     localStorage.removeItem("clawsight_wallet");
+    localStorage.removeItem("clawsight_auth_method");
     localStorage.removeItem("clawsight_onboarded");
     createClient().auth.signOut();
   }, [wagmiDisconnect]);
@@ -124,7 +215,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         walletAddress,
         isAuthenticated: !!walletAddress,
         isConnecting,
+        authMethod,
         connect,
+        signUpWithEmail,
+        signInWithEmail,
         disconnect,
         signMessage: signMsg,
       }}
