@@ -16,25 +16,16 @@ export async function DELETE(
 
   const { id } = await params;
 
-  // Verify the event belongs to this wallet (RLS handles this too, but be explicit)
-  const { data: event } = await supabase
+  // Atomic delete with wallet ownership check (no TOCTOU race)
+  const { error, count } = await supabase
     .from("activity_events")
-    .select("id, wallet_address")
+    .delete({ count: "exact" })
     .eq("id", id)
-    .single();
+    .eq("wallet_address", wallet);
 
-  if (!event) {
-    return NextResponse.json({ error: "Event not found" }, { status: 404 });
+  if (count === 0) {
+    return NextResponse.json({ error: "Event not found or not owned by you" }, { status: 404 });
   }
-
-  if (event.wallet_address !== wallet) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  const { error } = await supabase
-    .from("activity_events")
-    .delete()
-    .eq("id", id);
 
   if (error) {
     return NextResponse.json(
@@ -63,9 +54,24 @@ export async function PATCH(
   const body = await request.json();
   const { redact_fields } = body;
 
-  if (!redact_fields || !Array.isArray(redact_fields)) {
+  if (!redact_fields || !Array.isArray(redact_fields) || redact_fields.length === 0) {
     return NextResponse.json(
       { error: "redact_fields array is required" },
+      { status: 400 }
+    );
+  }
+
+  // Only allow redacting user-data fields, not system fields
+  const allowedRedactFields = [
+    "message", "content", "input", "output", "result",
+    "prompt", "response", "error_message", "details", "metadata",
+  ];
+  const invalidFields = redact_fields.filter(
+    (f: unknown) => typeof f !== "string" || !allowedRedactFields.includes(f)
+  );
+  if (invalidFields.length > 0) {
+    return NextResponse.json(
+      { error: `Invalid redact fields: ${invalidFields.join(", ")}. Allowed: ${allowedRedactFields.join(", ")}` },
       { status: 400 }
     );
   }
@@ -93,7 +99,8 @@ export async function PATCH(
   const { error } = await supabase
     .from("activity_events")
     .update({ event_data: redactedData })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("wallet_address", wallet);
 
   if (error) {
     return NextResponse.json(

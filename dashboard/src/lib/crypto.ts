@@ -12,6 +12,8 @@
 
 const ENCRYPTION_SALT = "clawsight-v1-secret-encryption";
 const IV_LENGTH = 12;
+const ENCRYPTION_VERSION = 1;
+const PBKDF2_ITERATIONS = 310_000; // NIST SP 800-132 recommended minimum for SHA-256
 
 /**
  * Derive an AES-256-GCM key from a wallet signature.
@@ -33,7 +35,7 @@ export async function deriveEncryptionKey(
     {
       name: "PBKDF2",
       salt: encoder.encode(ENCRYPTION_SALT),
-      iterations: 100_000,
+      iterations: PBKDF2_ITERATIONS,
       hash: "SHA-256",
     },
     keyMaterial,
@@ -44,7 +46,8 @@ export async function deriveEncryptionKey(
 }
 
 /**
- * Encrypt a plaintext string. Returns a base64-encoded string containing IV + ciphertext.
+ * Encrypt a plaintext string.
+ * Returns a base64-encoded string containing [version(1B)][IV(12B)][ciphertext].
  */
 export async function encrypt(
   plaintext: string,
@@ -59,16 +62,18 @@ export async function encrypt(
     encoder.encode(plaintext)
   );
 
-  // Prefix IV to ciphertext
-  const combined = new Uint8Array(iv.length + new Uint8Array(ciphertext).length);
-  combined.set(iv);
-  combined.set(new Uint8Array(ciphertext), iv.length);
+  // [version][iv][ciphertext]
+  const combined = new Uint8Array(1 + iv.length + new Uint8Array(ciphertext).length);
+  combined[0] = ENCRYPTION_VERSION;
+  combined.set(iv, 1);
+  combined.set(new Uint8Array(ciphertext), 1 + iv.length);
 
   return btoa(String.fromCharCode(...combined));
 }
 
 /**
- * Decrypt a base64-encoded string (IV + ciphertext) back to plaintext.
+ * Decrypt a base64-encoded string back to plaintext.
+ * Supports versioned format [version(1B)][IV][ciphertext] and legacy [IV][ciphertext].
  */
 export async function decrypt(
   encoded: string,
@@ -80,8 +85,18 @@ export async function decrypt(
       .map((c) => c.charCodeAt(0))
   );
 
-  const iv = combined.slice(0, IV_LENGTH);
-  const ciphertext = combined.slice(IV_LENGTH);
+  let iv: Uint8Array<ArrayBuffer>;
+  let ciphertext: Uint8Array<ArrayBuffer>;
+
+  // Check for version byte
+  if (combined[0] === ENCRYPTION_VERSION) {
+    iv = new Uint8Array(combined.slice(1, 1 + IV_LENGTH));
+    ciphertext = new Uint8Array(combined.slice(1 + IV_LENGTH));
+  } else {
+    // Legacy format: [IV][ciphertext] (no version byte)
+    iv = new Uint8Array(combined.slice(0, IV_LENGTH));
+    ciphertext = new Uint8Array(combined.slice(IV_LENGTH));
+  }
 
   const plaintext = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv },
@@ -130,7 +145,16 @@ export async function encryptSecretFields(
 
 /**
  * Given a skill's form fields and a config object, decrypt all secret-type fields.
+ * Throws DecryptionError if decryption fails (wrong wallet or corrupted data).
  */
+export class DecryptionError extends Error {
+  constructor(fieldKey: string, cause?: unknown) {
+    super(`Failed to decrypt field "${fieldKey}". Wrong wallet or corrupted data.`);
+    this.name = "DecryptionError";
+    this.cause = cause;
+  }
+}
+
 export async function decryptSecretFields(
   fields: FormField[],
   config: Record<string, unknown>,
@@ -144,10 +168,8 @@ export async function decryptSecretFields(
       if (value && isEncrypted(value)) {
         try {
           result[field.key] = await decrypt(value.slice(4), key);
-        } catch {
-          // If decryption fails, leave the encrypted value
-          // (could be wrong wallet or corrupted data)
-          result[field.key] = "";
+        } catch (err) {
+          throw new DecryptionError(field.key, err);
         }
       }
     }

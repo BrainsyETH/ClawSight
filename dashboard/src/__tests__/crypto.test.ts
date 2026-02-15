@@ -168,7 +168,7 @@ maybDescribe("crypto – encryptSecretFields / decryptSecretFields", () => {
     expect(encrypted.bot_token).toBe("");
   });
 
-  it("decryptSecretFields with wrong key sets field to empty string", async () => {
+  it("decryptSecretFields with wrong key throws DecryptionError", async () => {
     const config = {
       api_key: "sk-secret",
       provider: "bing",
@@ -179,14 +179,9 @@ maybDescribe("crypto – encryptSecretFields / decryptSecretFields", () => {
     const encrypted = await encryptSecretFields(sampleFields, config, key);
 
     const wrongKey = await deriveEncryptionKey("wrong-wallet-signature");
-    const decrypted = await decryptSecretFields(sampleFields, encrypted, wrongKey);
-
-    // Decryption with wrong key falls back to empty string (per the catch block)
-    expect(decrypted.api_key).toBe("");
-    expect(decrypted.bot_token).toBe("");
-    // Non-secret fields still unchanged
-    expect(decrypted.provider).toBe("bing");
-    expect(decrypted.enabled).toBe(false);
+    await expect(
+      decryptSecretFields(sampleFields, encrypted, wrongKey)
+    ).rejects.toThrow("Failed to decrypt field");
   });
 
   it("handles non-string values in secret fields gracefully", async () => {

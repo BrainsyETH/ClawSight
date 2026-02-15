@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, checkRateLimit } from "@/lib/server/auth";
 
+const MAX_BATCH_SIZE = 100;
+const MAX_EVENT_DATA_SIZE = 102_400; // 100KB per event_data
+
 /**
  * POST /v1/api/sync
  * Push activity events from plugin to ClawSight.
@@ -29,6 +32,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (events.length > MAX_BATCH_SIZE) {
+    return NextResponse.json(
+      { error: `Too many events. Maximum ${MAX_BATCH_SIZE} per request.` },
+      { status: 400 }
+    );
+  }
+
   // Validate event types
   const allowedTypes = [
     "tool_call", "message_sent", "payment", "error",
@@ -47,8 +57,49 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Validate event_data size and structure
+  for (const e of validEvents) {
+    const eventData = e.event_data;
+    if (eventData !== undefined && eventData !== null) {
+      if (typeof eventData !== "object" || Array.isArray(eventData)) {
+        return NextResponse.json(
+          { error: "event_data must be a plain object" },
+          { status: 400 }
+        );
+      }
+      const serialized = JSON.stringify(eventData);
+      if (serialized.length > MAX_EVENT_DATA_SIZE) {
+        return NextResponse.json(
+          { error: `event_data exceeds maximum size of ${MAX_EVENT_DATA_SIZE} bytes` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate optional string fields
+    if (e.skill_slug !== undefined && typeof e.skill_slug !== "string") {
+      return NextResponse.json(
+        { error: "skill_slug must be a string" },
+        { status: 400 }
+      );
+    }
+    if (e.session_id !== undefined && typeof e.session_id !== "string") {
+      return NextResponse.json(
+        { error: "session_id must be a string" },
+        { status: 400 }
+      );
+    }
+  }
+
   // Check idempotency (simple dedup by key)
   if (idempotency_key) {
+    if (typeof idempotency_key !== "string" || idempotency_key.length > 256) {
+      return NextResponse.json(
+        { error: "idempotency_key must be a string (max 256 chars)" },
+        { status: 400 }
+      );
+    }
+
     const { data: existing } = await supabase
       .from("activity_events")
       .select("id")
@@ -61,7 +112,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Insert events with wallet_address
+  // Insert events with wallet_address (always use server timestamp)
   const rows = validEvents.map((e: Record<string, unknown>) => ({
     wallet_address: wallet,
     skill_slug: e.skill_slug || null,
@@ -71,7 +122,7 @@ export async function POST(request: NextRequest) {
       ...(e.event_data as Record<string, unknown>),
       ...(idempotency_key ? { idempotency_key } : {}),
     },
-    occurred_at: e.occurred_at || new Date().toISOString(),
+    occurred_at: new Date().toISOString(),
   }));
 
   const { error } = await supabase.from("activity_events").insert(rows);
