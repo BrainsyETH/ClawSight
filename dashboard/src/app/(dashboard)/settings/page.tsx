@@ -1,21 +1,25 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
 import { useMode } from "@/hooks/use-mode";
 import { useUser } from "@/hooks/use-supabase-data";
 import { useAgentStatus } from "@/hooks/use-agent-status";
+import { usePushNotifications } from "@/hooks/use-push-notifications";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Shield, Database, Bell, Trash2, CheckCircle, Download } from "lucide-react";
+import { Settings, Shield, Database, Bell, Trash2, CheckCircle, Download, AlertTriangle } from "lucide-react";
 
 export default function SettingsPage() {
-  const { walletAddress } = useAuth();
+  const router = useRouter();
+  const { walletAddress, disconnect } = useAuth();
   const { label } = useMode();
   const { user, updateUser } = useUser(walletAddress ?? undefined);
   const agentStatus = useAgentStatus(walletAddress ?? undefined);
+  const push = usePushNotifications();
 
   const [dailyCap, setDailyCap] = useState("0.10");
   const [monthlyCap, setMonthlyCap] = useState("2.00");
@@ -23,6 +27,10 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Hydrate from DB
   useEffect(() => {
@@ -69,6 +77,26 @@ export default function SettingsPage() {
       setExporting(false);
     }
   };
+
+  const handleDeleteAccount = useCallback(async () => {
+    if (deleteConfirmText !== "DELETE") return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch("/v1/api/users", { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to delete account");
+      }
+      // Clear local state and redirect
+      disconnect();
+      router.push("/onboarding");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteConfirmText, disconnect, router]);
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -166,21 +194,40 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Sync Toggles */}
+      {/* Notifications & Sync */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bell className="w-4 h-4" />
-            {label("What Should I Sync?", "Sync Preferences")}
+            {label("Notifications & Sync", "Notifications & Sync")}
           </CardTitle>
           <CardDescription>
             {label(
-              "Choose what information I send to the dashboard.",
-              "Control which data the plugin syncs to ClawSight."
+              "Control how I notify you and what I sync.",
+              "Manage push notifications and data sync preferences."
             )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {/* Push notification toggle */}
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <span className="text-sm text-gray-700">Push notifications</span>
+              {!push.supported && (
+                <p className="text-xs text-gray-400">Not supported in this browser</p>
+              )}
+              {push.supported && push.permission === "denied" && (
+                <p className="text-xs text-red-400">Blocked by browser — update in browser settings</p>
+              )}
+            </div>
+            <ToggleSwitch
+              checked={push.subscribed}
+              disabled={!push.supported || push.permission === "denied" || push.loading}
+              onChange={push.toggle}
+            />
+          </div>
+
+          {/* Sync toggles */}
           {[
             { key: "activity", label: "Activity events", default: true },
             { key: "wallet", label: "Wallet & transactions", default: true },
@@ -255,10 +302,67 @@ export default function SettingsPage() {
                 Permanently remove all activity, configs, and account data
               </p>
             </div>
-            <Button variant="destructive" size="sm">
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setShowDeleteConfirm(true)}
+            >
               Delete
             </Button>
           </div>
+
+          {/* Delete confirmation inline panel */}
+          {showDeleteConfirm && (
+            <div className="mt-4 border border-red-300 rounded-lg p-4 bg-red-50 space-y-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-red-700">
+                    This action is irreversible
+                  </p>
+                  <p className="text-xs text-red-600 mt-1">
+                    This will permanently delete your account, all activity events,
+                    skill configurations, and agent status data. This cannot be undone.
+                  </p>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-700 block mb-1">
+                  Type <span className="font-mono font-bold">DELETE</span> to confirm
+                </label>
+                <Input
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="DELETE"
+                  className="font-mono"
+                />
+              </div>
+              {deleteError && (
+                <p className="text-xs text-red-600 font-medium">{deleteError}</p>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleDeleteAccount}
+                  disabled={deleteConfirmText !== "DELETE" || deleting}
+                >
+                  {deleting ? "Deleting..." : "Permanently Delete Everything"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    setDeleteConfirmText("");
+                    setDeleteError(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -275,16 +379,34 @@ export default function SettingsPage() {
   );
 }
 
-function ToggleSwitch({ defaultChecked }: { defaultChecked: boolean }) {
-  const [checked, setChecked] = useState(defaultChecked);
+function ToggleSwitch({
+  defaultChecked,
+  checked: controlledChecked,
+  disabled,
+  onChange,
+}: {
+  defaultChecked?: boolean;
+  checked?: boolean;
+  disabled?: boolean;
+  onChange?: () => void;
+}) {
+  const [internalChecked, setInternalChecked] = useState(defaultChecked ?? false);
+  const isControlled = controlledChecked !== undefined;
+  const checked = isControlled ? controlledChecked : internalChecked;
+
   return (
     <button
       role="switch"
       aria-checked={checked}
-      onClick={() => setChecked(!checked)}
+      disabled={disabled}
+      onClick={() => {
+        if (disabled) return;
+        if (onChange) onChange();
+        if (!isControlled) setInternalChecked(!internalChecked);
+      }}
       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
         checked ? "bg-red-500" : "bg-gray-300"
-      }`}
+      } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
     >
       <span
         className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
