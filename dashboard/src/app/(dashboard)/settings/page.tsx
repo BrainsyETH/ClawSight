@@ -292,22 +292,18 @@ export default function SettingsPage() {
               How do I view this in my wallet app?
             </summary>
             <div className="mt-3 p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
-              <p className="text-sm text-gray-700">You can import this address into any Ethereum-compatible wallet to monitor your balance:</p>
+              <p className="text-sm text-gray-700">You can monitor your agent wallet balance from any Ethereum-compatible wallet:</p>
               <div className="space-y-2">
                 <div className="flex items-start gap-2">
                   <span className="text-gray-400 mt-0.5">&bull;</span>
-                  <p className="text-sm text-gray-600"><strong>MetaMask:</strong> Add Base network, then use &quot;Import Account&quot; with your private key</p>
+                  <p className="text-sm text-gray-600"><strong>Watch-only:</strong> Add the address to MetaMask or Coinbase Wallet as a watch-only account to track your balance</p>
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="text-gray-400 mt-0.5">&bull;</span>
-                  <p className="text-sm text-gray-600"><strong>Coinbase Wallet:</strong> Import using your private key or watch-only mode with the address</p>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="text-gray-400 mt-0.5">&bull;</span>
-                  <p className="text-sm text-gray-600"><strong>Watch-only:</strong> Add the address to any wallet as a watch-only account to see balance without importing the key</p>
+                  <p className="text-sm text-gray-600"><strong>BaseScan:</strong> Search your address on BaseScan to see all transactions and token balances</p>
                 </div>
               </div>
-              <p className="text-xs text-gray-500">Your private key was encrypted during onboarding. You&apos;ll need your passphrase to decrypt it for import.</p>
+              <p className="text-xs text-gray-500">Your wallet&apos;s private key is managed by Coinbase Developer Platform in a Trusted Execution Environment. No seed phrase or private key to manage.</p>
             </div>
           </details>
 

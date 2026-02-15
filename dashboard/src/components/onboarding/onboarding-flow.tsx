@@ -30,10 +30,8 @@ import {
   Eye,
   EyeOff,
   AlertTriangle,
-  Key,
   Terminal,
   HelpCircle,
-  Info,
 } from "lucide-react";
 
 // ============================================================
@@ -76,53 +74,6 @@ interface OnboardingFlowProps {
 }
 
 // ============================================================
-// Wallet encryption helpers (AES-256-GCM with PBKDF2)
-// ============================================================
-
-async function deriveEncryptionKey(
-  passphrase: string,
-  salt: Uint8Array
-): Promise<CryptoKey> {
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(passphrase),
-    "PBKDF2",
-    false,
-    ["deriveKey"]
-  );
-  return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: salt as BufferSource, iterations: 600_000, hash: "SHA-256" },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt"]
-  );
-}
-
-async function encryptPrivateKey(
-  privateKey: string,
-  passphrase: string
-): Promise<string> {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveEncryptionKey(passphrase, salt);
-  const enc = new TextEncoder();
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    key,
-    enc.encode(privateKey)
-  );
-  // Pack: salt(16) + iv(12) + ciphertext
-  const ctBytes = new Uint8Array(ciphertext);
-  const packed = new Uint8Array(salt.length + iv.length + ctBytes.length);
-  packed.set(salt, 0);
-  packed.set(iv, salt.length);
-  packed.set(ctBytes, salt.length + iv.length);
-  return btoa(String.fromCharCode(...packed));
-}
-
-// ============================================================
 // Main component
 // ============================================================
 
@@ -155,18 +106,9 @@ export function OnboardingFlow({
   const [signupError, setSignupError] = useState<string | null>(null);
   const [signingUp, setSigningUp] = useState(false);
 
-  // Track B — agent wallet
+  // Track B — agent wallet (CDP-managed, no private key exposure)
   const [generatedAddress, setGeneratedAddress] = useState<string | null>(null);
-  const [generatedPrivateKey, setGeneratedPrivateKey] = useState<string | null>(
-    null
-  );
-  const [passphrase, setPassphrase] = useState("");
-  const [passphraseConfirm, setPassphraseConfirm] = useState("");
-  const [showKey, setShowKey] = useState(false);
-  const [keyCopied, setKeyCopied] = useState(false);
   const [addressCopied, setAddressCopied] = useState(false);
-  const [keySecured, setKeySecured] = useState(false);
-  const [securingKey, setSecuringKey] = useState(false);
 
   // Track B — OpenClaw setup
   const [openclawChoice, setOpenclawChoice] = useState<
@@ -261,17 +203,9 @@ export function OnboardingFlow({
 
     setSigningUp(true);
     try {
-      // Generate wallet first so we can pass the address to signUp
-      const { generatePrivateKey, privateKeyToAccount } = await import(
-        "viem/accounts"
-      );
-      const pk = generatePrivateKey();
-      const account = privateKeyToAccount(pk);
-
-      await signUpWithEmail(email, password, account.address);
-
-      setGeneratedPrivateKey(pk);
-      setGeneratedAddress(account.address);
+      // Creates CDP wallet + Supabase account in one call
+      const addr = await signUpWithEmail(email, password);
+      setGeneratedAddress(addr);
       setTrackBStep("agent-wallet");
     } catch (err) {
       setSignupError(
@@ -279,27 +213,6 @@ export function OnboardingFlow({
       );
     } finally {
       setSigningUp(false);
-    }
-  };
-
-  const handleSecureKey = async () => {
-    if (!generatedPrivateKey || !passphrase) return;
-    if (passphrase !== passphraseConfirm) return;
-    if (passphrase.length < 8) return;
-
-    setSecuringKey(true);
-    try {
-      const encrypted = await encryptPrivateKey(generatedPrivateKey, passphrase);
-      localStorage.setItem("clawsight_agent_wallet_encrypted", encrypted);
-      localStorage.setItem("clawsight_agent_wallet_address", generatedAddress!);
-      // Clear plaintext from memory
-      setGeneratedPrivateKey(null);
-      setKeySecured(true);
-      setTimeout(() => setTrackBStep("openclaw"), 1000);
-    } catch (err) {
-      console.error("[onboarding] Key encryption failed:", err);
-    } finally {
-      setSecuringKey(false);
     }
   };
 
@@ -385,15 +298,10 @@ export function OnboardingFlow({
     }
   };
 
-  const copyToClipboard = async (text: string, type: "key" | "address") => {
+  const copyToClipboard = async (text: string) => {
     await navigator.clipboard.writeText(text);
-    if (type === "key") {
-      setKeyCopied(true);
-      setTimeout(() => setKeyCopied(false), 2000);
-    } else {
-      setAddressCopied(true);
-      setTimeout(() => setAddressCopied(false), 2000);
-    }
+    setAddressCopied(true);
+    setTimeout(() => setAddressCopied(false), 2000);
   };
 
   // ============================================================
@@ -794,238 +702,111 @@ export function OnboardingFlow({
         )}
 
         {/* ================================================
-            TRACK B — STEP 2: AGENT WALLET
+            TRACK B — STEP 2: AGENT WALLET (CDP-managed)
         ================================================ */}
         {track === "b" && trackBStep === "agent-wallet" && (
           <Card>
             <CardContent className="p-8">
               <div className="text-center mb-6">
-                <Key
-                  className="w-12 h-12 text-red-500 mx-auto mb-4"
-                  aria-hidden="true"
-                />
+                <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-8 h-8 text-green-600" />
+                </div>
                 <h2 className="text-xl font-semibold mb-2">
-                  {keySecured ? "Wallet Secured" : "Your Agent Wallet"}
+                  Agent Wallet Created
                 </h2>
                 <p className="text-gray-500">
-                  {keySecured
-                    ? "Your private key has been encrypted and stored safely."
-                    : "We've generated a wallet for your AI agent. Secure it with a passphrase."}
+                  Your wallet is secured by Coinbase&apos;s infrastructure.
+                  No private keys to manage.
                 </p>
               </div>
 
-              {keySecured ? (
-                <div className="space-y-4 text-center">
-                  <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto">
-                    <CheckCircle className="w-8 h-8 text-green-600" />
-                  </div>
-                  <p className="text-sm text-gray-600">
-                    Wallet address saved. You&apos;ll need to fund it with USDC
-                    on Base to use paid skills.
+              <div className="space-y-4">
+                {/* Wallet address */}
+                <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-xs font-medium text-gray-500 mb-1">
+                    Agent Wallet Address
                   </p>
-                  <Explainer question="How do I fund this wallet?">
-                    <p className="mb-2">
-                      Your agent wallet address can receive USDC on the <strong>Base</strong> network
-                      (an Ethereum Layer 2). To fund it:
-                    </p>
-                    <ol className="list-decimal list-inside space-y-1 mb-2">
-                      <li>Copy your wallet address from Settings after setup</li>
-                      <li>Send USDC to it from Coinbase, an exchange, or another wallet</li>
-                      <li>Make sure you select the <strong>Base</strong> network (not Ethereum mainnet)</li>
-                    </ol>
-                    <p>
-                      Even $1-5 of USDC is enough to get started. Skills use tiny micropayments
-                      (fractions of a cent per API call).
-                    </p>
-                  </Explainer>
-                  <Explainer question="How do I view this in MetaMask or Coinbase Wallet?">
-                    <p className="mb-2">
-                      You can import this wallet into any Ethereum-compatible wallet app:
-                    </p>
-                    <ul className="list-disc list-inside space-y-1 mb-2">
-                      <li><strong>MetaMask:</strong> Add the Base network, then &quot;Import Account&quot; using your private key</li>
-                      <li><strong>Coinbase Wallet:</strong> Import using your private key</li>
-                      <li><strong>Watch-only:</strong> Add just the address (no key needed) to see your balance</li>
-                    </ul>
-                    <p>
-                      You&apos;ll need the passphrase you just set to decrypt your private key.
-                      You can find your wallet address in Settings anytime.
-                    </p>
-                  </Explainer>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {/* Wallet address */}
-                  <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <p className="text-xs font-medium text-gray-500 mb-1">
-                      Agent Wallet Address
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <code className="text-xs font-mono text-gray-800 break-all flex-1">
-                        {generatedAddress}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          generatedAddress &&
-                          copyToClipboard(generatedAddress, "address")
-                        }
-                        className="text-gray-400 hover:text-gray-600 shrink-0"
-                        aria-label="Copy address"
-                      >
-                        {addressCopied ? (
-                          <CheckCircle className="w-4 h-4 text-green-600" />
-                        ) : (
-                          <Copy className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-2">
-                      Base L2 (USDC) &middot; Fund this address to enable paid
-                      skills
-                    </p>
-                  </div>
-
-                  {/* Private key reveal */}
-                  <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
-                    <div className="flex items-start gap-2 mb-2">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-xs font-semibold text-amber-800">
-                          Back up your private key
-                        </p>
-                        <p className="text-xs text-amber-700 mt-0.5">
-                          Save this somewhere safe. If you lose both the key and
-                          your passphrase, your funds are unrecoverable.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <code className="text-xs font-mono text-gray-800 break-all flex-1">
-                        {showKey
-                          ? generatedPrivateKey
-                          : "••••••••••••••••••••••••••••••••"}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() => setShowKey(!showKey)}
-                        className="text-gray-400 hover:text-gray-600 shrink-0"
-                        aria-label={showKey ? "Hide key" : "Reveal key"}
-                      >
-                        {showKey ? (
-                          <EyeOff className="w-4 h-4" />
-                        ) : (
-                          <Eye className="w-4 h-4" />
-                        )}
-                      </button>
-                      {showKey && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            generatedPrivateKey &&
-                            copyToClipboard(generatedPrivateKey, "key")
-                          }
-                          className="text-gray-400 hover:text-gray-600 shrink-0"
-                          aria-label="Copy key"
-                        >
-                          {keyCopied ? (
-                            <CheckCircle className="w-4 h-4 text-green-600" />
-                          ) : (
-                            <Copy className="w-4 h-4" />
-                          )}
-                        </button>
+                  <div className="flex items-center gap-2">
+                    <code className="text-xs font-mono text-gray-800 break-all flex-1">
+                      {generatedAddress}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        generatedAddress && copyToClipboard(generatedAddress)
+                      }
+                      className="text-gray-400 hover:text-gray-600 shrink-0"
+                      aria-label="Copy address"
+                    >
+                      {addressCopied ? (
+                        <CheckCircle className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
                       )}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-2">
+                    Base L2 (USDC) &middot; Fund this address to enable paid skills
+                  </p>
+                </div>
+
+                {/* Security explainer */}
+                <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                  <div className="flex items-start gap-2">
+                    <Shield className="w-4 h-4 text-green-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-semibold text-green-800">
+                        Secured by Coinbase Developer Platform
+                      </p>
+                      <p className="text-xs text-green-700 mt-0.5">
+                        Your wallet&apos;s private key is managed in a Trusted Execution
+                        Environment (TEE). It never touches your browser or our servers.
+                      </p>
                     </div>
                   </div>
-
-                  {/* Passphrase to encrypt */}
-                  <div>
-                    <label
-                      htmlFor="passphrase"
-                      className="text-sm font-medium text-gray-700 block mb-1"
-                    >
-                      Encryption Passphrase
-                    </label>
-                    <Input
-                      id="passphrase"
-                      type="password"
-                      value={passphrase}
-                      onChange={(e) => setPassphrase(e.target.value)}
-                      placeholder="Choose a strong passphrase (min 8 chars)"
-                    />
-                    <p className="text-[11px] text-gray-400 mt-1">
-                      This encrypts your private key locally. It never leaves
-                      your browser.
-                    </p>
-                  </div>
-                  <div>
-                    <label
-                      htmlFor="passphrase-confirm"
-                      className="text-sm font-medium text-gray-700 block mb-1"
-                    >
-                      Confirm Passphrase
-                    </label>
-                    <Input
-                      id="passphrase-confirm"
-                      type="password"
-                      value={passphraseConfirm}
-                      onChange={(e) => setPassphraseConfirm(e.target.value)}
-                      placeholder="Repeat passphrase"
-                    />
-                  </div>
-
-                  {passphrase &&
-                    passphraseConfirm &&
-                    passphrase !== passphraseConfirm && (
-                      <p className="text-xs text-red-500">
-                        Passphrases do not match
-                      </p>
-                    )}
-
-                  <Explainer question="What is a private key and passphrase?">
-                    <p className="mb-2">
-                      A <strong>private key</strong> is like a master password for your wallet.
-                      Anyone with it can move your funds, so it must stay secret.
-                    </p>
-                    <p className="mb-2">
-                      The <strong>passphrase</strong> encrypts your private key before storing it.
-                      Think of it as a lock on a safe &mdash; the private key is inside the safe,
-                      and the passphrase opens it.
-                    </p>
-                    <p>
-                      Your key is generated in your browser and <strong>never sent to our servers</strong>.
-                      We cannot recover it if you lose both the key and passphrase.
-                    </p>
-                  </Explainer>
-
-                  <Button
-                    onClick={handleSecureKey}
-                    disabled={
-                      securingKey ||
-                      !passphrase ||
-                      passphrase.length < 8 ||
-                      passphrase !== passphraseConfirm
-                    }
-                    size="lg"
-                    className="w-full gap-2"
-                  >
-                    {securingKey ? (
-                      <>
-                        <Loader2
-                          className="w-4 h-4 animate-spin"
-                          aria-hidden="true"
-                        />
-                        Encrypting...
-                      </>
-                    ) : (
-                      <>
-                        <Shield className="w-4 h-4" aria-hidden="true" />
-                        Encrypt &amp; Secure Key
-                      </>
-                    )}
-                  </Button>
                 </div>
-              )}
+
+                <Explainer question="How do I fund this wallet?">
+                  <p className="mb-2">
+                    Your agent wallet address can receive USDC on the <strong>Base</strong> network
+                    (an Ethereum Layer 2). To fund it:
+                  </p>
+                  <ol className="list-decimal list-inside space-y-1 mb-2">
+                    <li>Copy your wallet address above</li>
+                    <li>Send USDC to it from Coinbase, an exchange, or another wallet</li>
+                    <li>Make sure you select the <strong>Base</strong> network (not Ethereum mainnet)</li>
+                  </ol>
+                  <p>
+                    Even $1-5 of USDC is enough to get started. Skills use tiny micropayments
+                    (fractions of a cent per API call).
+                  </p>
+                </Explainer>
+
+                <Explainer question="How is this different from MetaMask?">
+                  <p className="mb-2">
+                    Traditional wallets like MetaMask give you a private key that you must secure
+                    yourself. If you lose it, your funds are gone.
+                  </p>
+                  <p className="mb-2">
+                    Your <strong>CDP wallet</strong> uses Coinbase&apos;s infrastructure to manage the
+                    key securely. You don&apos;t need to back up a seed phrase or worry about
+                    key management.
+                  </p>
+                  <p>
+                    You can view your balance anytime in Settings or on{" "}
+                    <strong>BaseScan</strong> by searching your address.
+                  </p>
+                </Explainer>
+
+                <Button
+                  onClick={() => setTrackBStep("openclaw")}
+                  size="lg"
+                  className="w-full gap-2"
+                >
+                  Continue
+                  <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}
