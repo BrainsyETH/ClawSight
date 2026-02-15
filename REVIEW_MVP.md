@@ -1,369 +1,389 @@
-# ClawSight MVP Specification Review
+# ClawSight MVP Review — Updated
 
-**Reviewer:** Claude (Automated Review)
+**Reviewer:** Claude
 **Date:** February 15, 2026
-**Documents Reviewed:**
-- `ClawSight_Product_Specification.docx` (v1.0 MVP — Observability Dashboard)
-- `ClawSight_Specification_Final.docx` (v2.0 — GUI Layer for OpenClaw Skills)
+**Scope:** v2.0 specification (character-driven skill management GUI), incorporating scoping decisions made during planning.
 
 ---
 
-## Overall Assessment
+## Context: Decisions Already Made
 
-ClawSight has a clear product vision: make OpenClaw agents visible, manageable, and personal. The two specs represent a coherent evolution — v1.0 solves the "what is my agent doing?" problem, v2.0 expands into "how do I customize my agent?" Both are well-structured and show genuine understanding of the target user.
+This review accounts for the following product decisions:
 
-This review covers architectural concerns, specification gaps, monetization risks, and concrete suggestions for improvement.
-
----
-
-## 1. Specification Coherence: v1.0 vs v2.0
-
-### Problem: Two specs, unclear relationship
-
-The repo contains two specifications with overlapping but divergent scopes. It's unclear whether v2.0 **replaces** v1.0 or **extends** it. Specific conflicts:
-
-| Area | v1.0 MVP | v2.0 Final | Conflict |
-|------|----------|------------|----------|
-| Scope | Observability dashboard | Skill config + marketplace | Different products |
-| MVP Timeline | 6 weeks | 8 weeks | Which timeline governs? |
-| Database | 5 tables (agent-centric) | 6 tables (user-centric with `users` table) | Schema divergence |
-| Core identity | Privacy-first monitoring | Character-based personalization | Different positioning |
-| Agent table PK | `id` (UUID) | `id` with separate `users` table | Structural mismatch |
-
-### Recommendation
-
-Consolidate into a **single specification** with clear phases:
-- **Phase 1 (MVP):** Observability core from v1.0 (status, activity, spending, privacy)
-- **Phase 2:** Skill management and visual config from v2.0
-- **Phase 3:** Marketplace and presets from v2.0
-
-The v1.0 observability features are the stronger MVP because they solve an immediate pain point ("is my agent doing anything?") with less implementation risk than the marketplace. The character layer (Mrs. Claws) can be introduced in Phase 1 as a UI personality without requiring the full skill config system.
+| Decision | Choice |
+|----------|--------|
+| Direction | v2.0 — GUI layer for skill management with character-driven UX |
+| Marketplace | Deferred to v3. MVP focuses on skill configuration, not buying/selling. |
+| Platform | Desktop-first (config editing), mobile for monitoring only. Native app later. |
+| Character | Mrs. Claws is the default. Users can customize name, avatar, and switch between Fun/Professional modes. |
+| ENS | Nice-to-have, not in MVP |
+| Plugin distribution | GitHub repository |
+| Priority skills | 8 custom config forms (Web Search, Memory/LanceDB, Slack, GitHub, Google Calendar, Discord, Crypto Trading, PDF Operations) + generic JSON editor for everything else |
 
 ---
 
-## 2. Architecture & Technical Concerns
+## 1. What's Strong
 
-### 2.1 x402 as the sole monetization layer — High Risk
+**The pivot is the right call.** v2.0 has a larger addressable market than v1.0. "Make OpenClaw accessible to non-technical users" is a bigger opportunity than "give power users a monitoring dashboard." The character-driven UX is genuinely differentiating — nobody else in the AI agent space is doing this.
 
-**The concern:** Every API call requires a 402 → payment → retry round-trip. This has significant implications:
+**The fun/professional toggle resolves the audience tension.** My earlier concern about Mrs. Claws alienating serious users is addressed. Shipping both modes from day one means you don't have to pick an audience.
 
-- **Latency:** Each API call requires at minimum 3 HTTP round-trips (initial request → 402 response → payment signing → retry with payment header → facilitator verification). For real-time features like heartbeats every 30 seconds, this adds meaningful overhead.
-- **Failure modes:** If the x402 facilitator is down, the entire product is down. There's no fallback.
-- **Wallet dependency:** The plugin requires the agent's wallet to have USDC on Base L2 at all times. If the wallet is empty, the dashboard goes dark — even for read operations like checking status.
-- **Cold start problem:** New users who haven't funded their x402 wallet can't even see the dashboard. This directly conflicts with the "Curious Experimenter" persona defined in v1.0.
+**Deferring the marketplace is correct.** Building config management well is hard enough. The marketplace layer adds payment flows, creator payouts, content moderation, and discovery — all of which compound complexity. Get skill config right first.
 
-**Suggestions:**
-1. **Free tier for reads:** Make `GET /api/activity` and `GET /api/wallet` free (or auth-gated without payment) for the first N requests per day. Let users see value before paying.
-2. **Batch payments:** Instead of per-request micropayments, implement a prepaid credit system. User deposits $1 USDC, gets 1000 API credits. Eliminates per-call 402 negotiation overhead.
-3. **Graceful degradation:** If payment fails, serve cached/stale data with a "last updated X minutes ago" indicator rather than blocking entirely.
-4. **Heartbeat should be free or bundled:** At $0.0001 per heartbeat × every 30 seconds, that's $0.29/day just for status updates. This is 19% of the "light user" monthly budget ($0.50/month) spent on a single feature. Consider making heartbeats free and monetizing higher-value operations.
-
-### 2.2 Plugin Architecture — Missing error handling and resilience
-
-The plugin spec defines lifecycle hooks and a sync client but doesn't address:
-
-- **Offline behavior:** What happens when the user's machine has no internet? Events should be queued locally and batch-synced on reconnect.
-- **Retry logic:** No retry strategy is defined for failed API calls or payment failures.
-- **Plugin versioning:** No mechanism for the API to reject outdated plugin versions or negotiate capabilities.
-- **Rate limiting:** No client-side rate limiting. A misconfigured `heartbeat_interval_seconds: 1` could drain the wallet rapidly.
-- **Idempotency:** `POST /api/sync` has no idempotency key. Network retries could create duplicate events.
-
-**Suggestions:**
-1. Add an offline event queue with configurable max size (e.g., 1000 events).
-2. Define exponential backoff for all API calls (2s, 4s, 8s, max 60s).
-3. Add a `plugin_version` field to all API requests; allow the server to return a `426 Upgrade Required` response.
-4. Enforce minimum heartbeat interval (30s) in plugin code, regardless of config.
-5. Add an `idempotency_key` (UUID) to `/api/sync` requests.
-
-### 2.3 Supabase Realtime for dashboard updates — Scalability concern
-
-The spec relies on Supabase Realtime for live dashboard updates. This is fine for the MVP, but consider:
-
-- **Supabase Realtime has connection limits** (500 concurrent on Pro plan). At scale, this becomes a bottleneck.
-- **RLS + Realtime can be slow.** Every broadcast through Realtime with RLS enabled hits the database. For high-frequency events (heartbeats, activity), this could cause latency.
-
-**Suggestion:** For MVP this is acceptable. Plan for a migration path to a dedicated WebSocket server or SSE (Server-Sent Events) if you exceed 200-300 concurrent dashboard users.
-
-### 2.4 Database Schema Issues
-
-**v1.0 Schema:**
-- `agents` table uses `wallet_address` as a field but there's no dedicated `users` table. This means if a user has multiple agents (the schema implies this is possible), there's no clean way to store user-level preferences.
-- `transactions` table stores `is_clawsight` as a boolean — this is a leaky abstraction. Use a `source` enum (`clawsight`, `external`, `agent`) instead, since you'll likely want to distinguish more categories later.
-- `memory_metadata` stores `file_path` — this is a potential privacy leak. File paths can reveal directory structures, usernames, and project names. Consider hashing or normalizing paths.
-
-**v2.0 Schema:**
-- `config_presets` has `installs` (integer counter) and `rating` (numeric). Direct counter/average fields are prone to race conditions. Use a separate `preset_reviews` table and compute aggregates.
-- `skill_configs` uses `skill_slug` as a string identifier but there's no validation that it maps to an actual ClawHub skill. Consider a `skills` reference table or validate against ClawHub's API.
-
-**Suggestions:**
-1. Add a `users` table from the start (v2.0 has this right, v1.0 doesn't).
-2. Replace `is_clawsight` with `source` enum.
-3. Hash `file_path` in `memory_metadata` or store only the filename (not full path).
-4. Use a `preset_reviews` table instead of denormalized counters.
-5. Add `updated_at` timestamps to all mutable tables.
-6. Add database indexes on: `activity_events(wallet_address, occurred_at)`, `transactions(wallet_address, created_at)`, `skill_configs(wallet_address, skill_slug)`.
-
-### 2.5 Authentication: SIWE is right, but JWT in httpOnly cookie needs more detail
-
-The SIWE approach is correct for the target audience. However:
-
-- **Session refresh:** 7-day expiry with no refresh mechanism means users get logged out weekly. Define a silent refresh flow.
-- **Plugin auth vs. dashboard auth:** These are two different auth flows (API key vs. SIWE) but the spec doesn't clarify how they're linked. Can anyone with a plugin API key impersonate the user?
-- **API key generation:** "Generated on setup, stored locally" — where exactly? Is it encrypted at rest? What happens if the file is readable by other processes?
-
-**Suggestions:**
-1. Implement sliding window sessions: refresh the JWT on every authenticated request, keeping the 7-day window rolling.
-2. Define the plugin API key as a scoped token — it should only allow write access to the specific agent's data, not full account access.
-3. Store the API key in the OS keychain (macOS Keychain, Linux secret-service) rather than a plaintext config file.
+**Desktop config + mobile monitoring is pragmatic.** Visual config editors need screen real estate. Trying to make complex form editors work on mobile would slow development and compromise the desktop experience.
 
 ---
 
-## 3. Product & UX Concerns
+## 2. Architecture Concerns for the Refined MVP
 
-### 3.1 The Mrs. Claws character — Bold but risky
+### 2.1 Config write-path is the riskiest technical assumption
 
-The character-based UX is the most distinctive aspect of ClawSight. It's also the highest-risk design decision:
+The entire product depends on this flow:
 
-**Strengths:**
-- Genuinely differentiating. No competitor does this.
-- Makes the product memorable and shareable.
-- First-person agent voice ("I've been busy today") creates emotional connection.
-
-**Risks:**
-- **Audience mismatch:** The v1.0 persona is a "technically comfortable" power user. Lobster characters may feel unserious to this audience.
-- **Customization complexity:** Avatar systems (preset styles, color pickers, ENS avatar import) are deceptively expensive to build well. This is scope creep for an MVP.
-- **Cultural assumptions:** "Santa's wife, but a lobster" is charming but very niche. International users may not connect with the reference.
-
-**Suggestions:**
-1. For MVP, ship Mrs. Claws as a **fixed brand mascot** (like Clippy or the GitHub Octocat), not a customizable character system. Show her in the UI, use first-person voice, but don't build the avatar editor yet.
-2. Keep the character personality in the UI copy. This is cheap to implement and high-impact.
-3. Defer the full customization system (name, avatar, color) to Phase 2 when you have user feedback on whether people want it.
-
-### 3.2 Onboarding: 9 steps is too many
-
-The v2.0 onboarding has 9 steps. Even with "skippable everything," this creates friction:
-
-- Step 1 (Connect Wallet) — required, correct
-- Step 2 (Detect OpenClaw) — required, correct
-- Steps 3-8 — all skippable, which means they're probably not essential
-
-**The "skippable" pattern is an anti-pattern.** If most users will skip a step, that step shouldn't be in the onboarding flow. It should be discoverable in-app.
-
-**Suggestion:** Reduce onboarding to 3 steps:
-1. **Connect Wallet** (required)
-2. **Detect OpenClaw** (required, with install guidance if missing)
-3. **Dashboard** (land directly, with contextual prompts to customize)
-
-Move name, avatar, budget, and first skill to progressive disclosure — nudge the user from within the dashboard when contextually relevant (e.g., "Want to name your agent?" as a dismissable card on the dashboard).
-
-### 3.3 Memory Inspector — Underspecified
-
-Both specs mention memory metadata as a feature, but it's the least defined:
-
-- What does the memory view actually show? A list of filenames and timestamps is not very useful on its own.
-- What actions can a user take? Can they delete a memory? Request the agent forget something?
-- How does this interact with privacy if memory filenames contain sensitive information?
-
-**Suggestion:** Either spec this out fully (what the UI shows, what actions are available, how deletion works) or defer it to post-MVP. The observability value of memory metadata is lower than activity feed and spending — those should be the priority.
-
-### 3.4 Missing: Error states and empty states
-
-Neither spec defines what the user sees when:
-- The agent is offline and has never synced (first-time empty state)
-- The wallet has insufficient funds
-- The plugin fails to connect
-- The API is unreachable
-- A skill installation fails
-
-**Suggestion:** Define at minimum the following empty/error states:
-1. **No agent connected** — "Install the ClawSight plugin to get started" with setup guide
-2. **Agent offline** — Show last-known state with "last seen X ago" timestamp
-3. **Empty wallet** — "Fund your wallet to enable syncing" with link to Base bridge
-4. **API unreachable** — "Showing cached data from [timestamp]"
-5. **No activity yet** — "Your agent hasn't done anything yet. Here's how to get started."
-
----
-
-## 4. Monetization Analysis
-
-### 4.1 Revenue projections are optimistic
-
-The v2.0 spec projects 10,000 users generating $330,000/year. This assumes:
-- 10,000 installs of an OpenClaw plugin for a product that doesn't exist yet
-- Average $1.50/month in x402 spending per user (requires funded wallets)
-- $150,000/year in marketplace revenue (requires a thriving preset economy)
-
-**Reality check:** OpenClaw itself is early-stage. The total addressable market for "OpenClaw users who want a dashboard and will pay micropayments" is likely in the hundreds, not thousands, at launch.
-
-**Suggestion:** Model revenue conservatively:
-- **Month 1:** 20-30 users, $30-50 revenue
-- **Month 3:** 50-100 users, $100-200 revenue
-- **Month 6:** 150-300 users, $300-600 revenue
-
-This is still profitable given the $50/month infrastructure cost, but sets realistic expectations.
-
-### 4.2 Marketplace economics need a critical mass
-
-The preset marketplace (15% commission on config sales) is potentially the strongest revenue stream, but it has a classic **chicken-and-egg problem:**
-- Buyers won't come without presets to browse.
-- Sellers won't create presets without buyers.
-
-**Suggestions:**
-1. **Seed the marketplace** with 10-20 free and premium presets created by the team before launch.
-2. **Feature top creators** prominently to incentivize early sellers.
-3. **Don't launch the marketplace in MVP.** Focus on observability and manual skill config first. Add marketplace in Phase 2 once you have users who understand the config system.
-
-### 4.3 The x402 pricing table needs a "why"
-
-The spec lists prices ($0.0001 for heartbeat, $0.001 for activity feed) but doesn't explain the rationale. Are these based on Supabase costs? Competitive benchmarks? Round numbers?
-
-**Suggestion:** Document the pricing rationale:
-- What is the infrastructure cost per API call? (Supabase Edge Function invocation + DB query)
-- What margin is being applied? (e.g., 10x cost, 100x cost)
-- How do prices compare to alternatives? (e.g., Datadog per-host pricing, Grafana Cloud per-metric pricing)
-
-This helps with future pricing decisions and makes price changes defensible.
-
----
-
-## 5. Security Concerns
-
-### 5.1 RLS policy has a performance concern
-
-The example RLS policy uses a subquery:
-```sql
-CREATE POLICY "Users can only view their own events"
-  ON activity_events FOR SELECT
-  USING (
-    agent_id IN (
-      SELECT id FROM agents
-      WHERE wallet_address = auth.jwt()->>'wallet_address'
-    )
-  );
+```
+Dashboard → API → Plugin → ~/.openclaw/openclaw.json → Hot reload
 ```
 
-This subquery runs on every row evaluation. For tables with millions of rows, this will be slow.
+This chain has several failure points that the spec doesn't fully address:
 
-**Suggestion:** Denormalize `wallet_address` onto `activity_events` directly and use a simple equality check:
-```sql
-CREATE POLICY "Users can only view their own events"
-  ON activity_events FOR SELECT
-  USING (wallet_address = auth.jwt()->>'wallet_address');
+**Problem 1: Plugin must poll for config changes.**
+The plugin runs locally. The API stores config in Supabase. How does the plugin know a config change happened? Options:
+- **Polling:** Plugin checks API every N seconds for config updates. Simple but adds latency and x402 cost.
+- **Supabase Realtime in the plugin:** Plugin subscribes to config changes via WebSocket. Better UX but adds persistent connection overhead on the user's machine.
+- **Dashboard → Plugin direct communication:** Dashboard sends changes directly to the plugin via localhost. Fastest but requires the plugin to run an HTTP server locally.
+
+**Recommendation:** Use a hybrid. Dashboard writes to Supabase. Plugin subscribes to Supabase Realtime for config changes (WebSocket is lightweight). Fallback to polling every 60s if the WebSocket disconnects. Avoid running a local HTTP server in the plugin — it introduces security surface.
+
+**Problem 2: Config format coupling.**
+ClawSight stores config as JSONB in `skill_configs.config`. The plugin writes it to `~/.openclaw/openclaw.json`. If OpenClaw changes its config format, ClawSight breaks silently. There's no validation that the config ClawSight writes is actually valid for the target skill.
+
+**Recommendation:**
+1. The plugin should own the translation layer — read from API, validate against expected schema, write to OpenClaw format. Don't have the API write OpenClaw-format configs directly.
+2. Add a `config_schema_version` field to `skill_configs` so you can detect and handle format migrations.
+3. After writing config, the plugin should read it back from OpenClaw and confirm the hot-reload succeeded. Report success/failure to the API so the dashboard can show confirmation.
+
+**Problem 3: Concurrent config edits.**
+What if the user edits a skill config in the dashboard while also manually editing `openclaw.json`? Or if two browser tabs submit different configs?
+
+**Recommendation:** Add an `updated_at` optimistic lock. When the dashboard submits a config change, include the `updated_at` timestamp it last read. If the server's `updated_at` is newer, reject the write with a conflict error. For local file conflicts, the plugin should detect external `openclaw.json` changes (file watcher) and sync them back to ClawSight, with the local file always winning in a conflict.
+
+### 2.2 Custom config forms: build a form registry, not 8 bespoke components
+
+Building 8 separate React components (one per skill) seems manageable but will create maintenance burden. Each form is slightly different but shares patterns: text inputs, sliders, toggles, dropdowns, currency fields.
+
+**Better approach: Declarative form definitions.**
+
+```typescript
+// Define skill config forms as data, not components
+const SKILL_FORMS: Record<string, SkillFormDefinition> = {
+  web_search: {
+    fields: [
+      { key: "provider", type: "select", label: "Search provider",
+        options: ["google", "bing", "duckduckgo"], default: "google" },
+      { key: "api_key", type: "secret", label: "API key",
+        placeholder: "sk-..." },
+      { key: "max_results", type: "number", label: "Max results per query",
+        min: 1, max: 50, default: 10 },
+    ]
+  },
+  slack: {
+    fields: [
+      { key: "bot_token", type: "secret", label: "Bot token" },
+      { key: "default_channel", type: "text", label: "Default channel",
+        placeholder: "#general" },
+      { key: "notify_on_error", type: "toggle",
+        label: "Send me errors in Slack", default: true },
+    ]
+  },
+  // ... 6 more
+};
 ```
 
-### 5.2 No rate limiting defined
+Then build **one** generic `<SkillConfigForm definition={SKILL_FORMS[slug]} />` renderer. Benefits:
+- Adding new skills = adding data, not writing components
+- Consistent UX across all skill forms
+- Easier to test (test the renderer once, test data separately)
+- Path to JSON Schema-driven forms later (community-contributed schemas become form definitions)
 
-Neither spec mentions API rate limiting. Without it:
-- A buggy plugin could send thousands of requests per second.
-- A malicious actor could use a valid wallet to flood the database.
-- x402 payments don't inherently rate-limit — they just require payment.
+For the generic JSON editor fallback, use Monaco Editor (same as VS Code) with JSON validation.
 
-**Suggestion:** Implement rate limits per wallet address:
-- Heartbeat: max 1 per 15 seconds
-- Sync: max 10 per minute
-- Dashboard reads: max 60 per minute
+### 2.3 Skill installation needs a defined contract with OpenClaw
 
-### 5.3 Event data is stored as JSONB — injection risk
+"One-click install" from the ClawHub browser assumes the plugin can trigger `clawhub install <skill-slug>`. This raises questions:
 
-`event_data` in `activity_events` is unstructured JSONB. If the plugin sends arbitrary JSON and the dashboard renders it without sanitization, this is an XSS vector.
+- **Does `clawhub install` require user interaction?** (y/n prompts, license acceptance)
+- **Can it run while the Gateway is active?** Or does installation require a restart?
+- **What happens if installation fails?** (network error, incompatible version, missing dependencies)
+- **How does ClawSight know what's already installed?** Does it read the filesystem, or does OpenClaw expose an API?
 
-**Suggestion:**
-1. Validate `event_data` against a JSON Schema on the server side.
-2. Sanitize all JSONB content before rendering in the dashboard.
-3. Define allowed `event_type` values as an enum, not a free string.
+**Recommendation:** Before building the skill browser, write a proof-of-concept that:
+1. Reads the list of installed skills from `~/.openclaw/openclaw.json`
+2. Calls `clawhub install <slug>` programmatically
+3. Verifies the skill appears in the installed list
+4. Handles at least one failure case (skill not found, network error)
+
+If any of these steps require user interaction or Gateway restart, the "one-click install" UX needs to be redesigned as "request install → user confirms on their machine."
+
+### 2.4 The schema needs adjustments for the refined scope
+
+The proposed schema in the conversation is close, but needs refinement:
+
+```sql
+-- ISSUE 1: display_mode should be on users, not agents
+-- A user's preference for fun/professional affects the whole UI, not one agent.
+CREATE TABLE users (
+  wallet_address TEXT PRIMARY KEY,
+  display_mode TEXT DEFAULT 'fun' CHECK (display_mode IN ('fun', 'professional')),
+  agent_name TEXT DEFAULT 'Mrs. Claws',
+  avatar_style TEXT DEFAULT 'lobster',
+  avatar_color TEXT DEFAULT '#FF6B6B',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ISSUE 2: agents table may be premature if MVP is single-agent.
+-- If one wallet = one agent for MVP, merge agent fields into users.
+-- Add agents table later when multi-agent is needed.
+
+-- ISSUE 3: skill_configs needs a "source" field
+-- Track whether config came from ClawSight UI, manual file edit, or future preset
+CREATE TABLE skill_configs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  wallet_address TEXT REFERENCES users(wallet_address),
+  skill_slug TEXT NOT NULL,
+  enabled BOOLEAN DEFAULT true,
+  config JSONB NOT NULL DEFAULT '{}',
+  config_source TEXT DEFAULT 'manual'
+    CHECK (config_source IN ('clawsight', 'manual', 'preset', 'default')),
+  config_schema_version INTEGER DEFAULT 1,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(wallet_address, skill_slug)
+);
+
+-- ISSUE 4: activity_events needs a session_id for grouping
+-- Without this, the activity feed is a flat timeline with no way to
+-- show "Session: 4h 23m" or group events by session.
+CREATE TABLE activity_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  wallet_address TEXT NOT NULL REFERENCES users(wallet_address),
+  skill_slug TEXT,
+  session_id TEXT, -- Groups events into agent sessions
+  event_type TEXT NOT NULL
+    CHECK (event_type IN (
+      'tool_call', 'message_sent', 'payment', 'error',
+      'status_change', 'skill_installed', 'config_changed'
+    )),
+  event_data JSONB DEFAULT '{}',
+  occurred_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for common queries
+CREATE INDEX idx_activity_wallet_time
+  ON activity_events (wallet_address, occurred_at DESC);
+CREATE INDEX idx_activity_session
+  ON activity_events (session_id) WHERE session_id IS NOT NULL;
+CREATE INDEX idx_skill_configs_wallet
+  ON skill_configs (wallet_address);
+```
+
+### 2.5 x402 cost modeling for the MVP feature set
+
+With marketplace deferred, all revenue comes from x402 API calls. Let me recalculate costs based on the actual MVP feature set:
+
+| Endpoint | Frequency (active user/day) | Price | Daily cost |
+|----------|-----------------------------|-------|------------|
+| POST /api/sync (activity) | ~100 events/day in batches of 50 = 2 calls | $0.0005 | $0.001 |
+| POST /api/heartbeat | 1 per 30s × 16 active hours = 1,920 calls | $0.0001 | $0.192 |
+| POST /api/config (write config) | ~2/day | $0.0005 | $0.001 |
+| GET /api/skills (read configs) | ~5/day | $0.001 | $0.005 |
+| GET /api/activity (dashboard load) | ~10/day | $0.001 | $0.01 |
+| **Total** | | | **$0.209/day** |
+
+**The heartbeat dominates at 92% of cost.** This is a problem — the least valuable operation (status ping) is the most expensive line item for users.
+
+**Recommendations:**
+1. **Make heartbeats free.** They're tiny writes (status enum + timestamp). Absorb the cost. A user who sees their agent status is a user who stays engaged.
+2. **Charge for dashboard reads and config writes.** These are higher-value operations where the user is getting clear value.
+3. **Revised daily cost without heartbeat fees:** ~$0.017/day = ~$0.51/month. Still profitable at 50+ users.
+4. Alternative: **Bundle heartbeats into sync calls.** Include status in the activity sync payload. One endpoint, one payment, two purposes.
 
 ---
 
-## 6. Missing from Both Specs
+## 3. Product & UX Suggestions
 
-| Missing Element | Impact | Priority |
-|----------------|--------|----------|
-| **Data retention policy** | How long are activity events stored? Forever? 30 days? User-configurable? | High |
-| **Data export** | GDPR requires data portability. Users should be able to export all their data. | High |
-| **Multi-agent support** | Both schemas imply multiple agents per wallet, but the UX is designed for a single agent. Clarify. | Medium |
-| **Plugin update mechanism** | How does the plugin update itself? Manual reinstall? Auto-update? | Medium |
-| **Accessibility (a11y)** | No mention of keyboard navigation, screen readers, color contrast, or ARIA labels. | Medium |
-| **Internationalization (i18n)** | No mention of language support. "Mrs. Claws" and first-person English copy don't translate well. | Low (MVP) |
-| **Disaster recovery** | What happens if Supabase goes down? Backup strategy? | Medium |
-| **API versioning** | No `/v1/` prefix on endpoints. Breaking changes will be painful. | High |
-| **Testing strategy** | No mention of unit tests, integration tests, or E2E tests. | High |
-| **Monitoring/alerting for the service itself** | Who monitors ClawSight? How do you know if the API is down? | Medium |
-| **Terms of service / privacy policy** | Required for any product handling financial data (USDC transactions). | High |
+### 3.1 Onboarding: 3 steps, not 9
+
+Previous recommendation stands. But with the fun/professional toggle confirmed, the revised flow:
+
+1. **Connect Wallet** (required — SIWE sign-in)
+2. **Detect OpenClaw** (required — verify gateway connection, guide to install if missing)
+3. **Choose your style** (one screen — "Fun" shows Mrs. Claws preview, "Professional" shows clean dashboard preview, pick one, done)
+4. **Dashboard** (land here, with contextual prompts for name/avatar/first skill)
+
+Step 3 is important because the mode toggle affects the entire UI. Better to ask once upfront than have users confused by a lobster they didn't expect.
+
+### 3.2 The "My Skills" view needs a sync-state indicator
+
+When a user toggles a skill on/off or saves a config, the change must propagate: Dashboard → API → Plugin → OpenClaw. This takes time and can fail. The UI needs to show:
+
+- **Syncing...** (config submitted, waiting for plugin confirmation)
+- **Applied** (plugin confirmed the config was written and hot-reloaded)
+- **Failed** (plugin couldn't apply the config — show reason, offer retry)
+- **Pending restart** (change requires Gateway restart — tell the user what to do)
+
+Without this, users will toggle a skill, see no immediate effect, and toggle it again — potentially causing double-writes or confusion.
+
+### 3.3 Fun/Professional mode affects more than UI text
+
+The spec describes mode as a voice/tone toggle. But it should affect information density too:
+
+| Element | Fun Mode | Professional Mode |
+|---------|----------|-------------------|
+| Agent greeting | "Good morning! I've been busy today." | Hidden |
+| Skill card | "I follow @Dust and copy his moves" | "Polymarket copy trading — active" |
+| Activity feed | Conversational descriptions | Compact log format |
+| Dashboard density | Spacious, card-based, illustrative | Dense, table-based, data-forward |
+| Avatar | Prominent, animated | Small icon or hidden |
+| Empty state | Character speaking ("I don't have any skills yet!") | Standard "No skills configured" |
+
+This means you're building **two UI variants**, not just swapping strings. Scope this carefully — for MVP, it may be enough to only toggle the text voice and avatar visibility, keeping the layout the same.
+
+### 3.4 Skill browser needs a curated "featured" section
+
+Browsing 3,000+ ClawHub skills is overwhelming. The spec mentions search and categories, but discovery UX matters more than search for new users.
+
+**Recommendation for MVP:**
+1. **Featured section:** Hand-pick 10-15 skills across categories. Update monthly.
+2. **"Works great with ClawSight" badge:** Flag skills that have custom config forms in ClawSight.
+3. **Category filters:** Trading, Productivity, Communication, Development, Smart Home.
+4. **Search** as secondary navigation (most users won't know what to search for).
+
+Don't try to replicate ClawHub's full catalog. Curate a focused selection that shows ClawSight's config editing at its best.
+
+### 3.5 Define what "character customization" actually means for MVP
+
+The decision is "users can customize character and mode." But how much customization?
+
+**Suggested MVP scope:**
+- **Name:** Free text input, defaults to "Mrs. Claws"
+- **Avatar style:** 4-5 presets (Lobster, Robot, Pixel, Cat, Custom/Upload)
+- **Avatar color:** Color picker (accent color applied to chosen style)
+- **Mode:** Fun / Professional toggle
+
+**Not in MVP:**
+- Personality/voice customization (changes the first-person copy)
+- Multiple saved characters
+- Avatar animation options
+- Character "backstory" or bios
+
+Keep it to name + visual appearance + mode. Personality customization is a rabbit hole.
 
 ---
 
-## 7. Suggested Revised MVP Scope
+## 4. Risk Register
 
-Based on this review, here's a recommended MVP that reduces risk while preserving the core value proposition:
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| OpenClaw plugin API doesn't support runtime config writes | Medium | Critical | Build proof-of-concept in week 1 before committing to full build |
+| ClawHub has no browsable API for skill discovery | Medium | High | Fall back to curated list of skills. Don't depend on ClawHub API for MVP. |
+| Hot-reload fails silently for some skills | Medium | High | Plugin must verify config was applied and report back to dashboard |
+| Users don't fund x402 wallets | High | High | Make read endpoints free. Show value before requiring payment. |
+| 8 custom config forms is too many for MVP timeline | Medium | Medium | Start with 3 (Web Search, Slack, GitHub). Add others if time allows. |
+| Config format changes when OpenClaw updates | Medium | High | Version configs. Plugin handles migration between schema versions. |
+| Desktop-only config editing limits adoption | Low (MVP) | Medium (long-term) | Acceptable for MVP. Mobile config editing in v2.5 or native app. |
 
-### Phase 1 — MVP (4 weeks)
+---
 
-**Plugin:**
-- Lifecycle hooks (onStart, onStop, onToolCall, onError)
-- Session log parser → activity event sync
-- Heartbeat for status
-- Offline event queue with batch sync
-- Local config file with sync toggles
+## 5. Revised Roadmap Suggestion
 
-**API:**
-- Supabase schema: `users`, `agents`, `activity_events`, `transactions`
-- SIWE auth with sliding window sessions
-- x402 middleware on write endpoints; reads are free for MVP
-- Rate limiting per wallet
-- API versioned under `/v1/`
+### Phase 1: Foundation + Proof of Concept (Weeks 1-2)
 
-**Dashboard:**
-- Status indicator (online/thinking/idle/offline)
-- Activity feed (filterable by event type)
-- Wallet balance + daily/weekly spending
-- Mrs. Claws branding (fixed mascot, first-person copy)
-- Error states and empty states
-- PWA shell
+**Critical path: Validate the config write-path before building UI.**
 
-**Not in MVP (defer to Phase 2):**
-- Skill configuration UI
-- Avatar customization
-- Preset marketplace
-- Memory metadata
-- Push notifications
-- Spending breakdown by service (use simple total for MVP)
-- ENS integration (nice-to-have, not essential)
+- [ ] Set up Supabase project with schema (users, skill_configs, activity_events)
+- [ ] Implement SIWE authentication flow
+- [ ] Build plugin skeleton with lifecycle hooks (before_tool_call, after_tool_call)
+- [ ] **Proof of concept:** Plugin reads skill config from Supabase, writes to `openclaw.json`, triggers hot-reload, confirms success
+- [ ] **Proof of concept:** Plugin detects manual `openclaw.json` edits and syncs back to Supabase
+- [ ] Set up Next.js 14 project with Tailwind + shadcn/ui
+- [ ] Landing page
+- [ ] RLS policies on all tables
 
-### Phase 2 — Skill Management (3 weeks)
-- Visual skill config editor
-- My Skills view with toggles
+**Exit criteria:** Can change a skill config from Supabase console and see it applied in OpenClaw within 5 seconds.
+
+### Phase 2: Core Dashboard (Weeks 3-4)
+
+- [ ] Onboarding flow (3 steps: wallet, detect OpenClaw, choose mode)
+- [ ] Home dashboard (status, activity summary, wallet balance)
+- [ ] Activity feed with filtering (by event type, by skill)
+- [ ] My Skills view (list installed skills, on/off toggles)
+- [ ] Sync state indicators (syncing / applied / failed / pending restart)
+- [ ] Agent customization (name, avatar preset, color, mode toggle)
+- [ ] Plugin: session log parser + activity sync
+- [ ] Plugin: heartbeat + status updates
+- [ ] Fun/Professional mode toggle (text voice + avatar visibility)
+- [ ] Error states and empty states for all views
+
+### Phase 3: Skill Configuration (Weeks 5-6)
+
+- [ ] Declarative form registry for skill configs
+- [ ] Custom config forms for top 3 skills (Web Search, Slack, GitHub)
+- [ ] Generic JSON editor (Monaco) for all other skills
+- [ ] Config change → plugin sync → confirmation flow
+- [ ] Skill browser (curated featured list, category filters, search)
+- [ ] One-click skill installation via plugin
+- [ ] Custom config forms for 3 more skills (Discord, Calendar, Crypto Trading)
+- [ ] x402 payment integration on write endpoints
+
+### Phase 4: Polish + Launch (Weeks 7-8)
+
+- [ ] PWA setup for mobile monitoring
+- [ ] Mobile-optimized read-only views (status, activity, wallet)
+- [ ] PDF Operations + Memory/LanceDB config forms (skills 7-8)
+- [ ] Rate limiting on API
+- [ ] Plugin published to GitHub with installation docs
+- [ ] Documentation site
+- [ ] Launch to OpenClaw community
+
+### Post-MVP Backlog
+
+- Push notifications (error alerts, spending thresholds)
 - Spending breakdown by service
 - ENS name/avatar integration
-- Push notifications
-
-### Phase 3 — Marketplace (3 weeks)
-- Preset creation and publishing
-- Preset browsing and purchasing
-- 15% commission system
-- Premium first-party presets
-- Creator profiles
+- Memory metadata viewer
+- Data export (GDPR compliance)
+- JSON Schema-driven auto-form generation for community skills
+- Native mobile app
+- Config marketplace (v3)
 
 ---
 
-## 8. Quick Wins — Low effort, high impact
+## 6. Consolidated Quick Wins
 
-1. **Add `/v1/` prefix to all API routes now.** Costs nothing, saves pain later.
-2. **Define `event_type` as an enum** (`tool_call`, `message_sent`, `payment`, `error`, `status_change`) rather than a free string.
-3. **Add `created_at` and `updated_at` to every table** with default values. You'll thank yourself later.
-4. **Add a `data_retention_days` column to `users`** with a default of 90 days. Run a daily cleanup job.
-5. **Make the `/api/usage` endpoint return spending against limits** — this is the most important self-service debugging tool for users who think they're being overcharged.
-6. **Define a plugin health-check endpoint** (`GET /api/health`, free, no auth) so the plugin can verify connectivity before syncing.
-7. **Add request/response logging on the API** from day one. When a user reports "my events aren't showing up," you need to be able to trace the request.
+These are low-effort changes that should be adopted regardless of timeline:
+
+1. **API versioning:** Prefix all routes with `/v1/`. Do this in the Next.js route structure from day one.
+2. **Heartbeats should be free.** They cost you nearly nothing and represent 92% of per-user x402 spend.
+3. **`event_type` as CHECK constraint**, not a free string. Prevents garbage data from day one.
+4. **`updated_at` on every mutable table** with automatic trigger. You will need this for conflict detection.
+5. **Health check endpoint** (`GET /api/health`, free, no auth). Plugin uses this to verify connectivity before attempting syncs.
+6. **`session_id` on activity events.** Without it, you can't show session duration or group events meaningfully.
+7. **Merge `agents` into `users` for MVP.** One wallet = one agent simplifies everything. Add the `agents` table when multi-agent is a real requirement.
+8. **Start with 3 custom config forms, not 8.** Web Search, Slack, and GitHub are enough to validate the form registry pattern. Add others incrementally.
+9. **Build the form registry pattern from day one.** Declarative form definitions, generic renderer. Don't build 3 bespoke components.
+10. **Log every config change** as an `activity_event` of type `config_changed`. Users need an audit trail of what changed and when.
 
 ---
 
 ## Summary
 
-ClawSight has strong product instincts — the privacy-first positioning, the x402 micropayment model, and the character-based UX are all genuine differentiators. The main risks are:
+The refined MVP (v2.0 without marketplace, desktop-first, character customization) is a solid product. The highest-risk element is the **config write-path** (Dashboard → API → Plugin → OpenClaw hot-reload). Validate this in week 1 with a proof of concept before building UI.
 
-1. **Scope creep** between two divergent specs — consolidate into one phased plan.
-2. **x402-only monetization** creating friction for new users — add a free tier for reads.
-3. **Marketplace chicken-and-egg** — defer to Phase 3, seed with first-party content.
-4. **Missing operational basics** — rate limiting, data retention, API versioning, error states.
+The three things most likely to derail the timeline:
+1. **OpenClaw's plugin API** doesn't support what you need for runtime config management
+2. **Custom config forms** take longer than expected (solve with declarative form registry)
+3. **x402 integration** adds unexpected complexity to every API call (solve by making reads and heartbeats free)
 
-The strongest path to launch is a lean observability MVP (status + activity + spending) with the Mrs. Claws personality baked into the UI copy, followed by skill management and marketplace as separate phases informed by real user feedback.
+Ship the observability layer (status + activity + wallet) first, then layer skill config editing on top. Users will use the dashboard for monitoring even before the config editor is ready — that's your retention hook while you build the harder features.
