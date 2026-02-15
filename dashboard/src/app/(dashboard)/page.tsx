@@ -1,11 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { useMode } from "@/hooks/use-mode";
 import { useAgentStatus } from "@/hooks/use-agent-status";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { StatusIndicator } from "@/components/shared/status-indicator";
 import { WalletCard } from "@/components/dashboard/wallet-card";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
+import { SpendingChart, getDemoSpendingData } from "@/components/dashboard/spending-chart";
+import { MemoryViewer, getDemoMemories } from "@/components/dashboard/memory-viewer";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { ActivityEvent } from "@/types";
 
@@ -76,6 +79,9 @@ const DEMO_EVENTS: ActivityEvent[] = [
 export default function DashboardPage() {
   const { isFun, label, agentName } = useMode();
   const agentStatus = useAgentStatus();
+  const [spendingPeriod, setSpendingPeriod] = useState<"today" | "week" | "month">("today");
+  const demoSpending = getDemoSpendingData();
+  const demoMemories = getDemoMemories();
 
   return (
     <div className="space-y-6">
@@ -141,8 +147,18 @@ export default function DashboardPage() {
         ))}
       </div>
 
+      {/* Spending breakdown */}
+      <SpendingChart
+        categories={demoSpending.categories}
+        totalSpend={demoSpending.totalSpend}
+        period={spendingPeriod}
+      />
+
       {/* Activity Feed */}
       <ActivityFeed events={DEMO_EVENTS} />
+
+      {/* Memory Viewer */}
+      <MemoryViewer memories={demoMemories} />
     </div>
   );
 }
