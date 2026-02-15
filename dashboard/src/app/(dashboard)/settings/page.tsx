@@ -10,7 +10,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Shield, Database, Bell, Trash2, CheckCircle, Download, AlertTriangle } from "lucide-react";
+import { Settings, Shield, Database, Bell, Trash2, CheckCircle, Download, AlertTriangle, Wifi, Loader2, RefreshCw } from "lucide-react";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -29,6 +29,15 @@ export default function SettingsPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Gateway connection
+  const [gatewayUrl, setGatewayUrl] = useState(() =>
+    typeof window !== "undefined"
+      ? localStorage.getItem("clawsight_gateway_url") || "http://localhost:3080"
+      : "http://localhost:3080"
+  );
+  const [gatewayTesting, setGatewayTesting] = useState(false);
+  const [gatewayStatus, setGatewayStatus] = useState<"idle" | "ok" | "cors" | "error">("idle");
 
   // Hydrate from DB
   useEffect(() => {
@@ -95,6 +104,48 @@ export default function SettingsPage() {
       setDeleting(false);
     }
   }, [deleteConfirmText, disconnect, router]);
+
+  const handleTestGateway = async () => {
+    setGatewayTesting(true);
+    setGatewayStatus("idle");
+    const base = gatewayUrl.replace(/\/+$/, "");
+    try {
+      const res = await fetch(`${base}/health`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        setGatewayStatus("ok");
+        localStorage.setItem("clawsight_gateway_url", base);
+        return;
+      }
+      setGatewayStatus("error");
+    } catch {
+      // CORS probe
+      try {
+        const probe = await fetch(`${base}/health`, {
+          mode: "no-cors",
+          signal: AbortSignal.timeout(5000),
+        });
+        if (probe.type === "opaque") {
+          setGatewayStatus("cors");
+          localStorage.setItem("clawsight_gateway_url", base);
+          return;
+        }
+      } catch {
+        // genuinely unreachable
+      }
+      setGatewayStatus("error");
+    } finally {
+      setGatewayTesting(false);
+    }
+  };
+
+  const handleSaveGateway = () => {
+    const base = gatewayUrl.replace(/\/+$/, "");
+    localStorage.setItem("clawsight_gateway_url", base);
+    setGatewayStatus("ok");
+    setTimeout(() => setGatewayStatus("idle"), 3000);
+  };
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -231,33 +282,104 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Plugin Info */}
+      {/* Gateway Connection */}
       <Card>
         <CardHeader>
-          <CardTitle>Plugin Status</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Wifi className="w-4 h-4" />
+            Gateway Connection
+          </CardTitle>
+          <CardDescription>
+            Connect to your OpenClaw gateway. Works with local and remote instances.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Plugin version</span>
-            <Badge variant="secondary">v0.1.0</Badge>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-gray-700">
+              Gateway URL
+            </label>
+            <div className="flex gap-2 mt-1">
+              <Input
+                value={gatewayUrl}
+                onChange={(e) => {
+                  setGatewayUrl(e.target.value);
+                  setGatewayStatus("idle");
+                }}
+                placeholder="http://localhost:3080"
+                className="font-mono text-sm"
+              />
+              <Button
+                variant="outline"
+                size="default"
+                onClick={handleTestGateway}
+                disabled={gatewayTesting || !gatewayUrl.trim()}
+                className="gap-1.5 shrink-0"
+              >
+                {gatewayTesting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                Test
+              </Button>
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1">
+              Local: http://localhost:3080 &middot; Remote: http://your-server-ip:3080
+            </p>
           </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">API version</span>
-            <Badge variant="secondary">v1</Badge>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Gateway URL</span>
-            <span className="font-mono text-xs">
-              {typeof window !== "undefined"
-                ? localStorage.getItem("clawsight_gateway_url") || "http://localhost:3080"
-                : "http://localhost:3080"}
-            </span>
-          </div>
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Agent status</span>
-            <Badge variant={agentStatus.status === "online" ? "default" : "secondary"}>
-              {agentStatus.status}
-            </Badge>
+
+          {gatewayStatus === "ok" && (
+            <div className="flex items-center gap-2 text-green-600 text-sm font-medium">
+              <CheckCircle className="w-4 h-4" />
+              Connected — gateway is reachable
+            </div>
+          )}
+          {gatewayStatus === "cors" && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center gap-2 text-green-700 text-sm font-medium mb-1">
+                <CheckCircle className="w-4 h-4" />
+                Gateway detected (CORS)
+              </div>
+              <p className="text-xs text-green-600">
+                Something is running at this URL but the browser blocked the full response.
+                This is normal — the URL has been saved.
+              </p>
+            </div>
+          )}
+          {gatewayStatus === "error" && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-sm text-amber-700 font-medium mb-1">
+                Could not reach gateway
+              </p>
+              <p className="text-xs text-amber-600">
+                Make sure OpenClaw is running and the URL is correct.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={handleSaveGateway}
+              >
+                Save URL anyway
+              </Button>
+            </div>
+          )}
+
+          <div className="pt-2 border-t border-gray-100 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Plugin version</span>
+              <Badge variant="secondary">v0.1.0</Badge>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">API version</span>
+              <Badge variant="secondary">v1</Badge>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Agent status</span>
+              <Badge variant={agentStatus.status === "online" ? "default" : "secondary"}>
+                {agentStatus.status}
+              </Badge>
+            </div>
           </div>
         </CardContent>
       </Card>
