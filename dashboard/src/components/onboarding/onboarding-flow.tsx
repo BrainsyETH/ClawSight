@@ -32,6 +32,8 @@ import {
   AlertTriangle,
   Key,
   Terminal,
+  HelpCircle,
+  Info,
 } from "lucide-react";
 
 // ============================================================
@@ -552,6 +554,21 @@ export function OnboardingFlow({
               Not sure? Choose &quot;I&apos;m new here&quot; for a guided
               experience.
             </p>
+
+            <Explainer question="What is ClawSight?">
+              <p className="mb-2">
+                <strong>ClawSight</strong> is a dashboard that lets you monitor and manage your <strong>OpenClaw</strong> AI agent.
+                Think of it as mission control for your AI assistant.
+              </p>
+              <p className="mb-2">
+                <strong>OpenClaw</strong> is the AI agent itself &mdash; it runs on your computer or in the cloud, and can perform tasks,
+                search the web, send messages, and make micropayments on your behalf.
+              </p>
+              <p>
+                <strong>Skills</strong> are plugins that give your agent specific abilities (web search, email, trading, etc.).
+                You choose which skills to install, and you control how much your agent can spend.
+              </p>
+            </Explainer>
           </div>
         )}
 
@@ -593,6 +610,18 @@ export function OnboardingFlow({
                   </>
                 )}
               </Button>
+              <Explainer question="What is Sign-In with Ethereum (SIWE)?">
+                <p className="mb-2">
+                  SIWE lets you use your Ethereum wallet (like MetaMask) as your login.
+                  Instead of a username and password, you prove your identity by signing
+                  a message with your wallet.
+                </p>
+                <p>
+                  Your wallet address becomes your account ID across ClawSight. No personal
+                  data is collected &mdash; just your public wallet address.
+                </p>
+              </Explainer>
+
               <button
                 type="button"
                 onClick={() => setTrack("select")}
@@ -739,6 +768,19 @@ export function OnboardingFlow({
                   )}
                 </Button>
               </div>
+              <Explainer question="Why do I need an account?">
+                <p className="mb-2">
+                  Your email account lets you sign in to ClawSight from any device.
+                  When you create an account, we also generate a <strong>wallet</strong> for
+                  your AI agent automatically.
+                </p>
+                <p>
+                  This wallet is like a prepaid card for your agent. You fund it with USDC
+                  (a stablecoin pegged to the US dollar), and your agent uses it to pay for
+                  API calls via tiny micropayments. You set the spending limits.
+                </p>
+              </Explainer>
+
               <button
                 type="button"
                 onClick={() => setTrack("select")}
@@ -781,6 +823,35 @@ export function OnboardingFlow({
                     Wallet address saved. You&apos;ll need to fund it with USDC
                     on Base to use paid skills.
                   </p>
+                  <Explainer question="How do I fund this wallet?">
+                    <p className="mb-2">
+                      Your agent wallet address can receive USDC on the <strong>Base</strong> network
+                      (an Ethereum Layer 2). To fund it:
+                    </p>
+                    <ol className="list-decimal list-inside space-y-1 mb-2">
+                      <li>Copy your wallet address from Settings after setup</li>
+                      <li>Send USDC to it from Coinbase, an exchange, or another wallet</li>
+                      <li>Make sure you select the <strong>Base</strong> network (not Ethereum mainnet)</li>
+                    </ol>
+                    <p>
+                      Even $1-5 of USDC is enough to get started. Skills use tiny micropayments
+                      (fractions of a cent per API call).
+                    </p>
+                  </Explainer>
+                  <Explainer question="How do I view this in MetaMask or Coinbase Wallet?">
+                    <p className="mb-2">
+                      You can import this wallet into any Ethereum-compatible wallet app:
+                    </p>
+                    <ul className="list-disc list-inside space-y-1 mb-2">
+                      <li><strong>MetaMask:</strong> Add the Base network, then &quot;Import Account&quot; using your private key</li>
+                      <li><strong>Coinbase Wallet:</strong> Import using your private key</li>
+                      <li><strong>Watch-only:</strong> Add just the address (no key needed) to see your balance</li>
+                    </ul>
+                    <p>
+                      You&apos;ll need the passphrase you just set to decrypt your private key.
+                      You can find your wallet address in Settings anytime.
+                    </p>
+                  </Explainer>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -911,6 +982,22 @@ export function OnboardingFlow({
                       </p>
                     )}
 
+                  <Explainer question="What is a private key and passphrase?">
+                    <p className="mb-2">
+                      A <strong>private key</strong> is like a master password for your wallet.
+                      Anyone with it can move your funds, so it must stay secret.
+                    </p>
+                    <p className="mb-2">
+                      The <strong>passphrase</strong> encrypts your private key before storing it.
+                      Think of it as a lock on a safe &mdash; the private key is inside the safe,
+                      and the passphrase opens it.
+                    </p>
+                    <p>
+                      Your key is generated in your browser and <strong>never sent to our servers</strong>.
+                      We cannot recover it if you lose both the key and passphrase.
+                    </p>
+                  </Explainer>
+
                   <Button
                     onClick={handleSecureKey}
                     disabled={
@@ -965,6 +1052,20 @@ export function OnboardingFlow({
 
               {!openclawChoice && (
                 <div className="space-y-3">
+                  <Explainer question="What is OpenClaw and why do I need it?">
+                    <p className="mb-2">
+                      <strong>OpenClaw</strong> is the AI engine that powers your agent. It&apos;s
+                      an open-source program that runs either on your own computer or in the cloud.
+                    </p>
+                    <p className="mb-2">
+                      <strong>ClawSight</strong> (this dashboard) connects to OpenClaw to monitor
+                      what your agent is doing, configure its skills, and control spending.
+                    </p>
+                    <p>
+                      <strong>Cloud</strong> = easiest, runs on someone else&apos;s server. <strong>Self-host</strong> = you run it on your own machine for full privacy and control.
+                    </p>
+                  </Explainer>
+
                   <button
                     type="button"
                     onClick={() => setOpenclawChoice("cloud")}
@@ -1315,6 +1416,23 @@ export function OnboardingFlow({
                   Select at least one skill to continue
                 </p>
               )}
+
+              <Explainer question="What are skills and do they cost money?">
+                <p className="mb-2">
+                  <strong>Skills</strong> are plugins that give your agent specific abilities.
+                  For example, a web search skill lets your agent search the internet, and an
+                  email skill lets it send messages.
+                </p>
+                <p className="mb-2">
+                  Some skills are <strong>free</strong> (they use local processing only).
+                  Others make API calls that cost tiny amounts of USDC via <strong>x402 micropayments</strong> &mdash;
+                  typically fractions of a cent per request.
+                </p>
+                <p>
+                  You control exactly how much your agent can spend via the spending limits
+                  in Settings. You can add or remove skills anytime from the Skill Store.
+                </p>
+              </Explainer>
             </CardContent>
           </Card>
         )}
@@ -1534,6 +1652,30 @@ function GatewayErrorFeedback({
         </Button>
       </div>
     </div>
+  );
+}
+
+// ============================================================
+// Collapsible explainer component
+// ============================================================
+
+function Explainer({
+  question,
+  children,
+}: {
+  question: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="group mt-4">
+      <summary className="text-xs font-medium text-gray-500 cursor-pointer select-none flex items-center gap-1.5 hover:text-gray-700">
+        <HelpCircle className="w-3.5 h-3.5" />
+        {question}
+      </summary>
+      <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 leading-relaxed">
+        {children}
+      </div>
+    </details>
   );
 }
 
