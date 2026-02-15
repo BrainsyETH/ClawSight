@@ -247,7 +247,11 @@ export default function SettingsPage() {
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-gray-500">Gateway URL</span>
-            <span className="font-mono text-xs">http://localhost:3080</span>
+            <span className="font-mono text-xs">
+              {typeof window !== "undefined"
+                ? localStorage.getItem("clawsight_gateway_url") || "http://localhost:3080"
+                : "http://localhost:3080"}
+            </span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-gray-500">Agent status</span>
