@@ -128,7 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const connectSmartWallet = useCallback(
     () =>
       connectWithConnector(
-        coinbaseWallet({ appName: "ClawSight", preference: "smartWalletOnly" })
+        coinbaseWallet({ appName: "ClawSight", preference: { options: "smartWalletOnly" } })
       ),
     [connectWithConnector]
   );
