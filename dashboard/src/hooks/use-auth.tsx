@@ -21,7 +21,7 @@ interface AuthContextValue {
   isConnecting: boolean;
   authMethod: AuthMethod;
   connect: () => Promise<void>;
-  signUpWithEmail: (email: string, password: string, walletAddr: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string) => Promise<string>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   disconnect: () => void;
   signMessage: (message: string) => Promise<string>;
@@ -124,9 +124,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [connectAsync, signMessageAsync]);
 
   // Email signup flow (new users)
-  const signUpWithEmail = useCallback(async (email: string, password: string, walletAddr: string) => {
+  // 1. Creates a CDP-managed wallet via server API
+  // 2. Creates Supabase auth account with the wallet address
+  // 3. Creates user row
+  const signUpWithEmail = useCallback(async (email: string, password: string): Promise<string> => {
     setIsConnecting(true);
     try {
+      // Step 1: Create CDP wallet via server route
+      const walletRes = await fetch("/v1/api/wallet/create", { method: "POST" });
+      if (!walletRes.ok) {
+        const body = await walletRes.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to create agent wallet");
+      }
+      const { address: walletAddr } = await walletRes.json();
+
+      // Step 2: Create Supabase auth account
       const supabase = createClient();
       const { error } = await supabase.auth.signUp({
         email,
@@ -140,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(`Sign up failed: ${error.message}`);
       }
 
-      // Create user row with the generated wallet address
+      // Step 3: Create user row with the CDP wallet address
       await supabase.from("users").upsert(
         { wallet_address: walletAddr },
         { onConflict: "wallet_address", ignoreDuplicates: true }
@@ -150,6 +162,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthMethod("email");
       localStorage.setItem("clawsight_wallet", walletAddr);
       localStorage.setItem("clawsight_auth_method", "email");
+      localStorage.setItem("clawsight_agent_wallet_address", walletAddr);
+
+      return walletAddr;
     } catch (err) {
       console.error("[auth] Email signup failed:", err);
       throw err;
