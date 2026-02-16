@@ -168,8 +168,14 @@ export async function POST(request: NextRequest) {
       .setIssuer(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1`)
       .sign(secret);
 
+    // Generate a dummy refresh token – Supabase's setSession() requires a
+    // non-empty refresh_token string, but since we use custom JWTs the
+    // actual refresh flow is handled by re-authenticating with the wallet.
+    const refreshToken = `siwe_${walletAddress}_${now}`;
+
     return NextResponse.json({
       access_token: accessToken,
+      refresh_token: refreshToken,
       token_type: "bearer",
       expires_in: expiresIn,
       wallet_address: walletAddress,

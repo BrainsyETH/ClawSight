@@ -97,13 +97,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           );
         }
 
-        const { access_token } = await res.json();
+        const { access_token, refresh_token } = await res.json();
 
         // Set Supabase session with the server-signed JWT
         const supabase = createClient();
         const { error } = await supabase.auth.setSession({
           access_token,
-          refresh_token: "",
+          refresh_token,
         });
 
         if (error) {
