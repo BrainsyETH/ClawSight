@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 
 /**
- * Security proxy: adds CSP and other security headers to all responses.
+ * Security proxy: adds CSP and other security headers to all responses,
+ * and enforces server-side auth guards on dashboard pages.
+ *
  * Migrated from middleware.ts → proxy.ts for Next.js 16.
  */
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const response = NextResponse.next();
+  const { pathname } = request.nextUrl;
 
   // Content Security Policy
   response.headers.set(
@@ -40,9 +44,52 @@ export function proxy(request: NextRequest) {
   );
 
   // Prevent caching of API responses
-  if (request.nextUrl.pathname.startsWith("/v1/api")) {
+  if (pathname.startsWith("/v1/api")) {
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
     response.headers.set("Pragma", "no-cache");
+  }
+
+  // ================================================================
+  // Auth guard: protect dashboard pages from unauthenticated access.
+  // Public routes and API routes are excluded — API auth is handled
+  // by requireAuth() in route handlers.
+  // ================================================================
+  const isPublic =
+    pathname.startsWith("/onboarding") ||
+    pathname.startsWith("/welcome") ||
+    pathname.startsWith("/v1/api/") ||
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/favicon") ||
+    pathname === "/";
+
+  if (!isPublic) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+    if (supabaseUrl && supabaseAnon) {
+      const supabase = createServerClient(supabaseUrl, supabaseAnon, {
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            for (const { name, value, options } of cookiesToSet) {
+              response.cookies.set(name, value, options);
+            }
+          },
+        },
+      });
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/onboarding";
+        return NextResponse.redirect(url);
+      }
+    }
   }
 
   return response;
