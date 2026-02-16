@@ -56,6 +56,7 @@ export async function PATCH(request: NextRequest) {
     "monthly_spend_cap_usdc",
     "data_retention_days",
     "openclaw_gateway_url",
+    "onboarding_completed",
   ];
 
   const updates: Record<string, unknown> = {};
@@ -153,6 +154,16 @@ export async function PATCH(request: NextRequest) {
           { status: 400 }
         );
       }
+    }
+  }
+
+  // Validate onboarding_completed (must be boolean)
+  if (updates.onboarding_completed !== undefined) {
+    if (typeof updates.onboarding_completed !== "boolean") {
+      return NextResponse.json(
+        { error: "onboarding_completed must be a boolean" },
+        { status: 400 }
+      );
     }
   }
 

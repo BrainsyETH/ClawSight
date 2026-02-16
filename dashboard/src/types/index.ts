@@ -24,6 +24,7 @@ export type ConfigSource = "clawsight" | "manual" | "preset" | "default";
 export interface User {
   wallet_address: string;
   agent_name: string;
+  onboarding_completed: boolean;
   daily_spend_cap_usdc: number;
   monthly_spend_cap_usdc: number;
   data_retention_days: number;

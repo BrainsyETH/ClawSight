@@ -27,20 +27,31 @@ export default function DashboardLayout({
  */
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const { walletAddress, isAuthenticated } = useAuth();
-  const { loading } = useUser(walletAddress ?? undefined);
+  const { user, loading } = useUser(walletAddress ?? undefined);
   const router = useRouter();
   const [onboardingChecked, setOnboardingChecked] = useState(false);
 
   useEffect(() => {
-    // Check onboarding status from localStorage.
-    // If the user hasn't completed onboarding, redirect them.
-    const onboarded = localStorage.getItem("clawsight_onboarded");
-    if (!onboarded) {
-      router.replace("/onboarding");
+    // Fast path: localStorage cache says onboarding is done
+    const cached = localStorage.getItem("clawsight_onboarded");
+    if (cached === "true") {
+      setOnboardingChecked(true);
       return;
     }
-    setOnboardingChecked(true);
-  }, [router]);
+
+    // Wait for DB user to load before deciding
+    if (loading) return;
+
+    // Slow path: check DB (survives storage clears, logouts, new devices)
+    if (user?.onboarding_completed) {
+      localStorage.setItem("clawsight_onboarded", "true");
+      setOnboardingChecked(true);
+      return;
+    }
+
+    // Neither localStorage nor DB says completed — redirect to onboarding
+    router.replace("/onboarding");
+  }, [router, loading, user]);
 
   if (loading || !onboardingChecked) {
     return (
