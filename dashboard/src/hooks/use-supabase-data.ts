@@ -269,46 +269,7 @@ export function useActivityEvents(walletAddress?: string) {
   return { events, loading, total, redactEvent, redactEventFields };
 }
 
-// ============================================================
-// Agent status with real-time updates
-// ============================================================
-
-export function useRealtimeAgentStatus(walletAddress?: string) {
-  const [status, setStatus] = useState<AgentStatusRow | null>(null);
-
-  useEffect(() => {
-    if (!walletAddress) return;
-
-    async function fetch() {
-      const { data } = await getSupabase()
-        .from("agent_status")
-        .select("*")
-        .eq("wallet_address", walletAddress)
-        .single();
-      setStatus(data);
-    }
-    fetch();
-
-    const channel = getSupabase()
-      .channel("agent_status_changes")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "agent_status",
-          filter: `wallet_address=eq.${walletAddress}`,
-        },
-        (payload) => {
-          setStatus(payload.new as AgentStatusRow);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      getSupabase().removeChannel(channel);
-    };
-  }, [walletAddress]);
-
-  return status;
-}
+// Agent status with real-time updates is provided by
+// use-agent-status.ts (useAgentStatus hook). The duplicate
+// useRealtimeAgentStatus hook that was here has been removed
+// to avoid double-subscribing to the same Supabase channel.

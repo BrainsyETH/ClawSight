@@ -19,7 +19,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: true,
     featured: true,
-    installs: 4200,
   },
   {
     slug: "memory",
@@ -30,7 +29,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: true,
     featured: true,
-    installs: 3800,
   },
   {
     slug: "slack",
@@ -41,7 +39,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: true,
     featured: true,
-    installs: 2900,
   },
   {
     slug: "github",
@@ -52,7 +49,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: true,
     featured: true,
-    installs: 3200,
   },
   {
     slug: "crypto_trading",
@@ -63,7 +59,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: true,
     featured: true,
-    installs: 1800,
   },
   // --- NON-FEATURED (with custom forms) ---
   {
@@ -75,7 +70,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: true,
     featured: false,
-    installs: 1600,
   },
   {
     slug: "discord",
@@ -86,7 +80,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: true,
     featured: false,
-    installs: 2100,
   },
   {
     slug: "pdf",
@@ -97,7 +90,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: true,
     featured: false,
-    installs: 1400,
   },
   // --- GENERIC (no custom forms yet, JSON editor only) ---
   {
@@ -109,7 +101,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: false,
     featured: false,
-    installs: 980,
   },
   {
     slug: "notion",
@@ -120,7 +111,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: false,
     featured: false,
-    installs: 1100,
   },
   {
     slug: "web_scraper",
@@ -131,7 +121,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: false,
     featured: false,
-    installs: 2400,
   },
   {
     slug: "terminal",
@@ -142,7 +131,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: false,
     featured: false,
-    installs: 3100,
   },
   {
     slug: "home_assistant",
@@ -153,7 +141,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: false,
     featured: false,
-    installs: 680,
   },
   {
     slug: "telegram",
@@ -164,7 +151,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: false,
     featured: false,
-    installs: 1500,
   },
   {
     slug: "linear",
@@ -175,7 +161,6 @@ export const SKILL_CATALOG: SkillListing[] = [
     installed: false,
     hasCustomForm: false,
     featured: false,
-    installs: 750,
   },
 ];
 

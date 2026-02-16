@@ -56,6 +56,7 @@ export async function PATCH(request: NextRequest) {
     "monthly_spend_cap_usdc",
     "data_retention_days",
     "openclaw_gateway_url",
+    "agent_wallet_address",
     "onboarding_completed",
     "sync_activity",
     "sync_wallet",
@@ -161,6 +162,18 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
+  // Validate agent_wallet_address (must be an Ethereum address)
+  if (updates.agent_wallet_address !== undefined && updates.agent_wallet_address !== null) {
+    const addr = String(updates.agent_wallet_address);
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
+      return NextResponse.json(
+        { error: "agent_wallet_address must be a valid Ethereum address" },
+        { status: 400 }
+      );
+    }
+    updates.agent_wallet_address = addr.toLowerCase();
+  }
+
   // Validate onboarding_completed (must be boolean)
   if (updates.onboarding_completed !== undefined) {
     if (typeof updates.onboarding_completed !== "boolean") {
@@ -213,9 +226,13 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
   }
 
-  // Delete in order: activity_events, agent_status, skill_configs, user
+  // Delete all user data across all tables before removing the user row.
+  // Order matters: delete from leaf tables first to avoid FK violations.
+  await supabase.from("usage_ledger").delete().eq("wallet_address", wallet);
+  await supabase.from("usage_daily_summary").delete().eq("wallet_address", wallet);
   await supabase.from("activity_events").delete().eq("wallet_address", wallet);
   await supabase.from("agent_status").delete().eq("wallet_address", wallet);
+  await supabase.from("agent_registry").delete().eq("wallet_address", wallet);
   await supabase.from("skill_configs").delete().eq("wallet_address", wallet);
 
   const { error } = await supabase

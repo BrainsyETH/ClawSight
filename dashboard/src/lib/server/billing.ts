@@ -29,52 +29,69 @@ export async function checkSpendingCaps(
   supabase: SupabaseClient,
   wallet: string
 ): Promise<{ allowed: boolean; reason?: string; daily_spend?: number; monthly_spend?: number; daily_cap?: number; monthly_cap?: number }> {
-  const [userRes, dailyRes, monthlyRes] = await Promise.all([
-    supabase
-      .from("users")
-      .select("daily_spend_cap_usdc, monthly_spend_cap_usdc")
-      .eq("wallet_address", wallet)
-      .single(),
-    supabase.rpc("get_daily_spend", { p_wallet: wallet }),
-    supabase.rpc("get_monthly_spend", { p_wallet: wallet }),
-  ]);
+  try {
+    const [userRes, dailyRes, monthlyRes] = await Promise.all([
+      supabase
+        .from("users")
+        .select("daily_spend_cap_usdc, monthly_spend_cap_usdc")
+        .eq("wallet_address", wallet)
+        .single(),
+      supabase.rpc("get_daily_spend", { p_wallet: wallet }),
+      supabase.rpc("get_monthly_spend", { p_wallet: wallet }),
+    ]);
 
-  const user = userRes.data;
-  if (!user) return { allowed: true };
+    const user = userRes.data;
+    if (!user) return { allowed: true };
 
-  const dailySpend = Number(dailyRes.data) || 0;
-  const monthlySpend = Number(monthlyRes.data) || 0;
-  const dailyCap = Number(user.daily_spend_cap_usdc);
-  const monthlyCap = Number(user.monthly_spend_cap_usdc);
+    if (dailyRes.error) {
+      console.error("[billing] get_daily_spend RPC error:", dailyRes.error);
+    }
+    if (monthlyRes.error) {
+      console.error("[billing] get_monthly_spend RPC error:", monthlyRes.error);
+    }
 
-  if (dailySpend >= dailyCap) {
-    return {
-      allowed: false,
-      reason: `Daily spending cap reached ($${dailySpend.toFixed(4)} / $${dailyCap.toFixed(2)})`,
-      daily_spend: dailySpend,
-      monthly_spend: monthlySpend,
-      daily_cap: dailyCap,
-      monthly_cap: monthlyCap,
-    };
+    const dailySpend = Number(dailyRes.data) || 0;
+    const monthlySpend = Number(monthlyRes.data) || 0;
+    const dailyCap = Number(user.daily_spend_cap_usdc);
+    const monthlyCap = Number(user.monthly_spend_cap_usdc);
+
+    if (dailySpend >= dailyCap) {
+      return {
+        allowed: false,
+        reason: `Daily spending cap reached ($${dailySpend.toFixed(4)} / $${dailyCap.toFixed(2)})`,
+        daily_spend: dailySpend,
+        monthly_spend: monthlySpend,
+        daily_cap: dailyCap,
+        monthly_cap: monthlyCap,
+      };
+    }
+
+    if (monthlySpend >= monthlyCap) {
+      return {
+        allowed: false,
+        reason: `Monthly spending cap reached ($${monthlySpend.toFixed(4)} / $${monthlyCap.toFixed(2)})`,
+        daily_spend: dailySpend,
+        monthly_spend: monthlySpend,
+        daily_cap: dailyCap,
+        monthly_cap: monthlyCap,
+      };
+    }
+
+    return { allowed: true, daily_spend: dailySpend, monthly_spend: monthlySpend, daily_cap: dailyCap, monthly_cap: monthlyCap };
+  } catch (err) {
+    console.error("[billing] checkSpendingCaps unexpected error:", err);
+    // Fail open — don't block the user if billing check itself fails
+    return { allowed: true };
   }
-
-  if (monthlySpend >= monthlyCap) {
-    return {
-      allowed: false,
-      reason: `Monthly spending cap reached ($${monthlySpend.toFixed(4)} / $${monthlyCap.toFixed(2)})`,
-      daily_spend: dailySpend,
-      monthly_spend: monthlySpend,
-      daily_cap: dailyCap,
-      monthly_cap: monthlyCap,
-    };
-  }
-
-  return { allowed: true, daily_spend: dailySpend, monthly_spend: monthlySpend, daily_cap: dailyCap, monthly_cap: monthlyCap };
 }
 
 /**
  * Record a billable operation in the usage ledger.
  * Atomically increments the daily rollup via RPC.
+ *
+ * Errors are logged but do not throw — billing failures must not
+ * block the primary operation. The usage_daily_summary RPC is the
+ * authoritative record for spending caps.
  */
 export async function recordUsage(
   supabase: SupabaseClient,
@@ -84,7 +101,7 @@ export async function recordUsage(
 ): Promise<void> {
   const cost = opts?.cost_override ?? getOperationCost(operation);
 
-  await supabase.from("usage_ledger").insert({
+  const { error: ledgerError } = await supabase.from("usage_ledger").insert({
     wallet_address: wallet,
     operation,
     cost_usdc: cost,
@@ -92,13 +109,21 @@ export async function recordUsage(
     metadata: opts?.metadata || {},
   });
 
+  if (ledgerError) {
+    console.error("[billing] usage_ledger insert failed:", ledgerError, { wallet, operation, cost });
+  }
+
   // Atomic increment of daily summary
   if (cost > 0 || operation === "api_call") {
-    await supabase.rpc("increment_daily_usage", {
+    const { error: rpcError } = await supabase.rpc("increment_daily_usage", {
       p_wallet: wallet,
       p_cost: cost,
       p_calls: 1,
     });
+
+    if (rpcError) {
+      console.error("[billing] increment_daily_usage RPC failed:", rpcError, { wallet, operation, cost });
+    }
   }
 }
 

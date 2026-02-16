@@ -6,11 +6,12 @@ import {
   useState,
   useCallback,
   useEffect,
+  useRef,
   ReactNode,
 } from "react";
 import { useAccount, useConnect, useDisconnect, useSignMessage } from "wagmi";
 import { injected, coinbaseWallet } from "@wagmi/connectors";
-import { createSiweMessage, generateNonce } from "@/lib/siwe";
+import { createSiweMessage } from "@/lib/siwe";
 import { createClient } from "@/lib/supabase";
 
 type AuthMethod = "siwe" | null;
@@ -30,12 +31,22 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/** How long before JWT expiry to trigger a silent re-auth (5 minutes). */
+const REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
 /**
  * Unified wallet-based auth provider.
  *
  * Both power users (MetaMask) and new users (Coinbase Smart Wallet)
  * authenticate via SIWE. The wallet address IS the user's identity.
- * No email or password involved.
+ *
+ * Session persistence:
+ * - JWT is stored in Supabase httpOnly cookies via @supabase/ssr
+ * - On mount, we validate the existing Supabase session JWT
+ * - If the JWT is expired but the wallet is still connected via wagmi,
+ *   we silently re-authenticate with SIWE (no user interaction needed
+ *   since the wallet connector is already approved)
+ * - A timer refreshes the session before the 1-hour JWT expires
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { address, isConnected } = useAccount();
@@ -45,30 +56,174 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [authMethod, setAuthMethod] = useState<AuthMethod>(null);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionRestored = useRef(false);
 
-  // Sync wagmi state to our context
-  useEffect(() => {
-    if (isConnected && address) {
-      setWalletAddress(address);
-      setAuthMethod("siwe");
-      localStorage.setItem("clawsight_wallet", address);
-      localStorage.setItem("clawsight_auth_method", "siwe");
-    }
-  }, [isConnected, address]);
+  /**
+   * Perform SIWE auth against the server and set the Supabase session.
+   * Returns the expiry timestamp (ms) of the new JWT, or null on failure.
+   */
+  const authenticateWithSiwe = useCallback(
+    async (addr: string): Promise<number | null> => {
+      // Fetch server-issued nonce (prevents replay attacks)
+      const nonceRes = await fetch("/v1/api/auth/nonce");
+      if (!nonceRes.ok) return null;
+      const { nonce } = await nonceRes.json();
+      const siweMessage = createSiweMessage(addr, nonce);
+      const message = siweMessage.prepareMessage();
+      const signature = await signMessageAsync({ message });
 
-  // Restore session on mount
+      const res = await fetch("/v1/api/auth/siwe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, signature }),
+      });
+
+      if (!res.ok) return null;
+
+      const { access_token, refresh_token, expires_in } = await res.json();
+
+      const supabase = createClient();
+      const { error } = await supabase.auth.setSession({
+        access_token,
+        refresh_token,
+      });
+
+      if (error) return null;
+
+      // Create user row if needed
+      await supabase.from("users").upsert(
+        { wallet_address: addr.toLowerCase() },
+        { onConflict: "wallet_address", ignoreDuplicates: true }
+      );
+
+      return Date.now() + (expires_in || 3600) * 1000;
+    },
+    [signMessageAsync]
+  );
+
+  /**
+   * Schedule a silent re-auth before the JWT expires.
+   */
+  const scheduleRefresh = useCallback(
+    (expiresAt: number, addr: string) => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+
+      const delay = Math.max(expiresAt - Date.now() - REFRESH_BUFFER_MS, 30_000);
+      refreshTimer.current = setTimeout(async () => {
+        try {
+          const newExpiry = await authenticateWithSiwe(addr);
+          if (newExpiry) {
+            scheduleRefresh(newExpiry, addr);
+          }
+        } catch {
+          // Silent failure — user will need to re-auth manually on next API call
+        }
+      }, delay);
+    },
+    [authenticateWithSiwe]
+  );
+
+  // Restore session on mount: check if Supabase session is still valid
   useEffect(() => {
-    const stored = localStorage.getItem("clawsight_wallet");
-    if (stored && !walletAddress) {
-      setWalletAddress(stored);
-      setAuthMethod("siwe");
+    if (sessionRestored.current) return;
+    sessionRestored.current = true;
+
+    (async () => {
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session?.access_token) {
+        // Decode JWT to check expiry and extract wallet
+        try {
+          const [, payloadB64] = session.access_token.split(".");
+          const payload = JSON.parse(atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/")));
+          const wallet =
+            payload.wallet_address ??
+            payload.user_metadata?.wallet_address ??
+            null;
+          const exp = (payload.exp || 0) * 1000;
+
+          if (wallet && exp > Date.now()) {
+            // Session is still valid
+            setWalletAddress(wallet);
+            setAuthMethod("siwe");
+            localStorage.setItem("clawsight_wallet", wallet);
+            scheduleRefresh(exp, wallet);
+            return;
+          }
+        } catch {
+          // Malformed JWT — fall through to re-auth
+        }
+      }
+
+      // No valid session — try silent re-auth if wallet is connected via wagmi
+      if (isConnected && address) {
+        try {
+          const expiry = await authenticateWithSiwe(address);
+          if (expiry) {
+            setWalletAddress(address);
+            setAuthMethod("siwe");
+            localStorage.setItem("clawsight_wallet", address);
+            scheduleRefresh(expiry, address);
+            return;
+          }
+        } catch {
+          // Re-auth failed — wallet may require user approval again
+        }
+      }
+
+      // Last resort: show stored wallet address so UI doesn't flash
+      const storedWallet = localStorage.getItem("clawsight_wallet");
+      if (storedWallet) {
+        setWalletAddress(storedWallet);
+        setAuthMethod("siwe");
+      }
+    })();
+  }, [isConnected, address, authenticateWithSiwe, scheduleRefresh]);
+
+  // When wagmi reconnects (e.g. page reload with persistent connector),
+  // sync state and refresh JWT if needed
+  useEffect(() => {
+    if (isConnected && address && !walletAddress) {
+      (async () => {
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session?.access_token) {
+          try {
+            const expiry = await authenticateWithSiwe(address);
+            if (expiry) {
+              setWalletAddress(address);
+              setAuthMethod("siwe");
+              localStorage.setItem("clawsight_wallet", address);
+              scheduleRefresh(expiry, address);
+            }
+          } catch {
+            // Will need manual reconnect
+          }
+        } else {
+          setWalletAddress(address);
+          setAuthMethod("siwe");
+          localStorage.setItem("clawsight_wallet", address);
+        }
+      })();
     }
-  }, [walletAddress]);
+  }, [isConnected, address, walletAddress, authenticateWithSiwe, scheduleRefresh]);
+
+  // Clean up refresh timer on unmount
+  useEffect(() => {
+    return () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current);
+    };
+  }, []);
 
   /**
    * Core SIWE auth flow — shared by both connect methods.
-   * Connects via the given wagmi connector, signs a SIWE message,
-   * and creates a Supabase session + user row.
    */
   const connectWithConnector = useCallback(
     async (connector: ReturnType<typeof injected> | ReturnType<typeof coinbaseWallet>) => {
@@ -77,49 +232,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const result = await connectAsync({ connector });
         const addr = result.accounts[0];
 
-        // SIWE signature — send the exact string the wallet signed
-        const nonce = generateNonce();
-        const siweMessage = createSiweMessage(addr, nonce);
-        const message = siweMessage.prepareMessage();
-        const signature = await signMessageAsync({ message });
-
-        // Verify SIWE server-side and get a signed JWT
-        const res = await fetch("/v1/api/auth/siwe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message, signature }),
-        });
-
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(
-            `SIWE authentication failed: ${body.error || res.statusText}`
-          );
+        const expiry = await authenticateWithSiwe(addr);
+        if (!expiry) {
+          throw new Error("SIWE authentication failed");
         }
-
-        const { access_token, refresh_token } = await res.json();
-
-        // Set Supabase session with the server-signed JWT
-        const supabase = createClient();
-        const { error } = await supabase.auth.setSession({
-          access_token,
-          refresh_token,
-        });
-
-        if (error) {
-          throw new Error(`Failed to set session: ${error.message}`);
-        }
-
-        // Create user row (wallet_address is the PK)
-        await supabase.from("users").upsert(
-          { wallet_address: addr.toLowerCase() },
-          { onConflict: "wallet_address", ignoreDuplicates: true }
-        );
 
         setWalletAddress(addr);
         setAuthMethod("siwe");
         localStorage.setItem("clawsight_wallet", addr);
         localStorage.setItem("clawsight_auth_method", "siwe");
+        scheduleRefresh(expiry, addr);
       } catch (err) {
         console.error("[auth] Connection failed:", err);
         const msg = err instanceof Error ? err.message : String(err);
@@ -137,16 +259,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsConnecting(false);
       }
     },
-    [connectAsync, signMessageAsync]
+    [connectAsync, authenticateWithSiwe, scheduleRefresh]
   );
 
-  // Connect with injected wallet (MetaMask, etc.)
   const connect = useCallback(
     () => connectWithConnector(injected()),
     [connectWithConnector]
   );
 
-  // Connect with Coinbase Smart Wallet (passkey-based)
   const connectSmartWallet = useCallback(
     () =>
       connectWithConnector(
@@ -156,12 +276,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const disconnect = useCallback(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current);
     wagmiDisconnect();
     setWalletAddress(null);
     setAuthMethod(null);
     localStorage.removeItem("clawsight_wallet");
     localStorage.removeItem("clawsight_auth_method");
     localStorage.removeItem("clawsight_onboarded");
+    localStorage.removeItem("clawsight_agent_wallet_address");
     createClient().auth.signOut();
   }, [wagmiDisconnect]);
 

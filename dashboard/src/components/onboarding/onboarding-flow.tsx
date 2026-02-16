@@ -214,6 +214,15 @@ export function OnboardingFlow({
       const { address } = await walletRes.json();
       setAgentWalletAddress(address);
       localStorage.setItem("clawsight_agent_wallet_address", address);
+
+      // Persist agent wallet address to the database so it survives
+      // cache clears, device switches, and new browser sessions
+      fetch("/v1/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent_wallet_address: address }),
+      }).catch(() => {});
+
       setTrackBStep("agent-wallet");
     } catch (err) {
       setSmartWalletError(

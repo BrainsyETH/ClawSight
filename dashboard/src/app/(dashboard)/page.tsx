@@ -7,6 +7,7 @@ import { useWalletBalance } from "@/hooks/use-wallet-balance";
 import {
   useActivityEvents,
   useSkillConfigs,
+  useUser,
 } from "@/hooks/use-supabase-data";
 import { StatusIndicator } from "@/components/shared/status-indicator";
 import { WalletCard } from "@/components/dashboard/wallet-card";
@@ -14,7 +15,8 @@ import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { SpendingChart } from "@/components/dashboard/spending-chart";
 import { MemoryViewer, MemoryEntry } from "@/components/dashboard/memory-viewer";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Loader2, Compass, ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { ActivityEvent } from "@/types";
 
 const SPENDING_COLORS = [
@@ -109,6 +111,7 @@ export default function DashboardPage() {
   const { walletAddress } = useAuth();
   const agentStatus = useAgentStatus(walletAddress ?? undefined);
   const { balance: walletBalance } = useWalletBalance(walletAddress);
+  const { user } = useUser(walletAddress ?? undefined);
   const { events, loading: eventsLoading, redactEvent, redactEventFields } = useActivityEvents(walletAddress ?? undefined);
   const { configs, loading: configsLoading } = useSkillConfigs(walletAddress ?? undefined);
 
@@ -171,8 +174,32 @@ export default function DashboardPage() {
           balance={walletBalance ?? 0}
           todaySpending={spending.totalSpend}
           weekSpending={spending.totalSpend}
+          agentWalletAddress={user?.agent_wallet_address}
         />
       </div>
+
+      {/* Welcome guidance for fresh users */}
+      {activeSkills.length === 0 && events.length === 0 && (
+        <Card className="border-dashed border-2 border-gray-200 bg-gray-50/50">
+          <CardContent className="p-6 text-center">
+            <Compass className="w-8 h-8 text-gray-400 mx-auto mb-3" />
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">
+              Ready to get started?
+            </h3>
+            <p className="text-sm text-gray-500 mb-4 max-w-md mx-auto">
+              Install your first skill to give your agent capabilities like web search,
+              Slack messaging, or crypto trading.
+            </p>
+            <Link
+              href="/learn"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-500 text-white text-sm font-medium rounded-lg hover:bg-red-600 transition-colors"
+            >
+              Browse Skill Store
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
