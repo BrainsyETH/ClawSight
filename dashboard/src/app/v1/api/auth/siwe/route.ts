@@ -51,19 +51,32 @@ export async function POST(request: NextRequest) {
     //    We use viem's verifyMessage instead of siwe's built-in verify so
     //    that both EOA wallets (ecrecover) and smart-contract wallets like
     //    Coinbase Smart Wallet (EIP-1271) are supported.
-    const siweMessage = new SiweMessage(message);
-    const messageString = siweMessage.prepareMessage();
+    //    We verify against the raw message string from the client (exactly
+    //    what the wallet signed) rather than re-serializing with
+    //    prepareMessage(), which can differ after a parse round-trip.
+    let parsedAddress: string;
+    try {
+      const siweMessage = new SiweMessage(message);
+      parsedAddress = siweMessage.address;
+    } catch (err) {
+      console.error("[siwe] Failed to parse SIWE message:", err);
+      return NextResponse.json(
+        { error: "Invalid SIWE message format" },
+        { status: 400 }
+      );
+    }
 
     let isValid: boolean;
     try {
       isValid = await publicClient.verifyMessage({
-        address: siweMessage.address as `0x${string}`,
-        message: messageString,
+        address: parsedAddress as `0x${string}`,
+        message: message as string,
         signature: signature as `0x${string}`,
       });
-    } catch {
+    } catch (err) {
+      console.error("[siwe] Signature verification error:", err);
       return NextResponse.json(
-        { error: "Invalid SIWE signature" },
+        { error: "Signature verification failed" },
         { status: 401 }
       );
     }
@@ -75,7 +88,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const walletAddress = siweMessage.address.toLowerCase();
+    const walletAddress = parsedAddress.toLowerCase();
     const userId = walletToUserId(walletAddress);
     const email = `${walletAddress}@wallet.clawsight.app`;
 

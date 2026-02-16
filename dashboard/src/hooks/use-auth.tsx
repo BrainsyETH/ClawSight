@@ -77,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const result = await connectAsync({ connector });
         const addr = result.accounts[0];
 
-        // SIWE signature
+        // SIWE signature — send the exact string the wallet signed
         const nonce = generateNonce();
         const siweMessage = createSiweMessage(addr, nonce);
         const message = siweMessage.prepareMessage();
@@ -87,10 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const res = await fetch("/v1/api/auth/siwe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: siweMessage.toMessage(),
-            signature,
-          }),
+          body: JSON.stringify({ message, signature }),
         });
 
         if (!res.ok) {
@@ -125,6 +122,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("clawsight_auth_method", "siwe");
       } catch (err) {
         console.error("[auth] Connection failed:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (
+          msg.includes("eth_requestAccounts") ||
+          msg.includes("No provider") ||
+          msg.includes("window.ethereum")
+        ) {
+          throw new Error(
+            "No wallet extension found. Please install MetaMask or another Ethereum wallet browser extension."
+          );
+        }
         throw err;
       } finally {
         setIsConnecting(false);
