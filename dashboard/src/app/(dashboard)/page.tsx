@@ -228,15 +228,19 @@ export default function DashboardPage() {
         period="today"
       />
 
-      {/* Activity Feed */}
-      <ActivityFeed
-        events={events}
-        onRedactEvent={redactEvent}
-        onRedactFields={redactEventFields}
-      />
+      {/* Activity Feed — only show if there are today's events or skills configured */}
+      {(todayEvents.length > 0 || activeSkills.length > 0) && (
+        <ActivityFeed
+          events={events}
+          onRedactEvent={redactEvent}
+          onRedactFields={redactEventFields}
+        />
+      )}
 
-      {/* Memory Viewer */}
-      <MemoryViewer memories={memories} />
+      {/* Memory Viewer — only show if there are meaningful memories */}
+      {memories.length > 0 && (
+        <MemoryViewer memories={memories} />
+      )}
     </div>
   );
 }

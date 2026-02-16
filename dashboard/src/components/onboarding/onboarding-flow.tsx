@@ -247,13 +247,22 @@ export function OnboardingFlow({
     setProvisionStage(0);
     try {
       const res = await fetch("/v1/api/agent/provision", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || "Provisioning failed");
+        // If Fly.io isn't configured, show a specific non-scary message
+        if (body.code === "FLY_NOT_CONFIGURED") {
+          setProvisionError(
+            body.error || "Cloud hosting is not configured yet."
+          );
+        } else {
+          setProvisionError(body.error || "Provisioning failed. Please try again.");
+        }
+        return; // Don't auto-advance — stay on error screen
       }
-      const { gateway_url } = await res.json();
-      setProvisionedUrl(gateway_url);
-      saveGatewayUrl(gateway_url);
+
+      setProvisionedUrl(body.gateway_url);
+      saveGatewayUrl(body.gateway_url);
       setTimeout(() => setTrackBStep("profile"), 1200);
     } catch (err) {
       setProvisionError(
