@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { useUser } from "@/hooks/use-supabase-data";
 import { Sidebar } from "@/components/dashboard/sidebar";
+import { ToastProvider } from "@/components/ui/toast";
 import { Loader2, AlertTriangle, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
@@ -15,7 +16,9 @@ export default function DashboardLayout({
 }) {
   return (
     <AuthProvider>
-      <DashboardShell>{children}</DashboardShell>
+      <ToastProvider>
+        <DashboardShell>{children}</DashboardShell>
+      </ToastProvider>
     </AuthProvider>
   );
 }

@@ -10,36 +10,41 @@ export type CapExceededCallback = (spending: HeartbeatResponse["spending"]) => v
  * If cap_exceeded is true, fires the onCapExceeded callback so the
  * plugin can gracefully pause the agent before the server hard-stops it.
  *
+ * Exponential backoff: on consecutive failures, the interval doubles
+ * (up to 5 minutes) to avoid hammering an unavailable server.
+ * Resets to normal interval on first successful heartbeat.
+ *
  * Minimum interval enforced at 30 seconds to prevent wallet drain.
  */
 export class Heartbeat {
   private api: ApiClient;
-  private intervalMs: number;
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private baseIntervalMs: number;
+  private timer: ReturnType<typeof setTimeout> | null = null;
   private currentStatus: string = "online";
   private currentSessionId?: string;
   private onCapExceeded?: CapExceededCallback;
   private _lastSpending: HeartbeatResponse["spending"] | null = null;
+  private consecutiveFailures = 0;
+  private readonly maxBackoffMs = 5 * 60 * 1000; // 5 minutes
 
   constructor(api: ApiClient, intervalSeconds: number, onCapExceeded?: CapExceededCallback) {
     this.api = api;
-    this.intervalMs = Math.max(intervalSeconds, 30) * 1000;
+    this.baseIntervalMs = Math.max(intervalSeconds, 30) * 1000;
     this.onCapExceeded = onCapExceeded;
   }
 
   start(sessionId?: string): void {
     this.currentSessionId = sessionId;
+    this.consecutiveFailures = 0;
     this.stop();
 
     // Send initial heartbeat immediately
     this.send();
-
-    this.timer = setInterval(() => this.send(), this.intervalMs);
   }
 
   stop(): void {
     if (this.timer) {
-      clearInterval(this.timer);
+      clearTimeout(this.timer);
       this.timer = null;
     }
   }
@@ -53,15 +58,37 @@ export class Heartbeat {
     return this._lastSpending;
   }
 
+  private scheduleNext(): void {
+    if (this.timer) clearTimeout(this.timer);
+
+    const delay =
+      this.consecutiveFailures === 0
+        ? this.baseIntervalMs
+        : Math.min(
+            this.baseIntervalMs * Math.pow(2, this.consecutiveFailures),
+            this.maxBackoffMs
+          );
+
+    this.timer = setTimeout(() => this.send(), delay);
+  }
+
   private async send(): Promise<void> {
     const result = await this.api.heartbeat(this.currentStatus, this.currentSessionId);
 
     if (result?.spending) {
       this._lastSpending = result.spending;
+      this.consecutiveFailures = 0; // Reset backoff on success
 
       if (result.spending.cap_exceeded && this.onCapExceeded) {
         this.onCapExceeded(result.spending);
       }
+    } else {
+      this.consecutiveFailures++;
+      if (this.consecutiveFailures === 1) {
+        console.warn("[ClawSight] Heartbeat failed, will retry with backoff");
+      }
     }
+
+    this.scheduleNext();
   }
 }

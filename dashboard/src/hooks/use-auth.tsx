@@ -11,7 +11,7 @@ import {
 } from "react";
 import { useAccount, useConnect, useDisconnect, useSignMessage } from "wagmi";
 import { injected, coinbaseWallet } from "@wagmi/connectors";
-import { createSiweMessage, generateNonce } from "@/lib/siwe";
+import { createSiweMessage } from "@/lib/siwe";
 import { createClient } from "@/lib/supabase";
 
 type AuthMethod = "siwe" | null;
@@ -65,7 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const authenticateWithSiwe = useCallback(
     async (addr: string): Promise<number | null> => {
-      const nonce = generateNonce();
+      // Fetch server-issued nonce (prevents replay attacks)
+      const nonceRes = await fetch("/v1/api/auth/nonce");
+      if (!nonceRes.ok) return null;
+      const { nonce } = await nonceRes.json();
       const siweMessage = createSiweMessage(addr, nonce);
       const message = siweMessage.prepareMessage();
       const signature = await signMessageAsync({ message });

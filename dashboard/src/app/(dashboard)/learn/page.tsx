@@ -3,15 +3,19 @@
 import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useSkillConfigs } from "@/hooks/use-supabase-data";
+import { useEncryption } from "@/hooks/use-encryption";
+import { useToast } from "@/components/ui/toast";
 import { SkillBrowser } from "@/components/skills/skill-browser";
 import { Compass } from "lucide-react";
-import { getDefaultConfig } from "@/lib/skill-forms";
+import { getDefaultConfig, getSkillForm } from "@/lib/skill-forms";
 import { SKILL_CATALOG } from "@/lib/skill-catalog";
 import { SkillListing } from "@/types";
 
 export default function LearnPage() {
-  const { walletAddress } = useAuth();
+  const { walletAddress, signMessage } = useAuth();
   const { configs, saveConfig } = useSkillConfigs(walletAddress ?? undefined);
+  const { ready: encryptionReady, initEncryption, encryptConfig } = useEncryption();
+  const { addToast } = useToast();
   const [installing, setInstalling] = useState<string | null>(null);
   const [remoteSkills, setRemoteSkills] = useState<SkillListing[] | null>(null);
 
@@ -45,11 +49,37 @@ export default function LearnPage() {
   const handleInstall = async (slug: string) => {
     setInstalling(slug);
     try {
-      // Create a new skill config entry with defaults
       const defaults = getDefaultConfig(slug) || {};
-      await saveConfig(slug, defaults);
+      const formDef = getSkillForm(slug);
+
+      // Check if this skill has secret fields that need encryption
+      const hasSecrets = formDef?.fields.some((f) => f.type === "secret") ?? false;
+
+      let configToSave = defaults;
+      if (hasSecrets) {
+        // Initialize encryption if not already done
+        if (!encryptionReady) {
+          await initEncryption(signMessage);
+        }
+        // Encrypt secret fields before saving
+        if (formDef) {
+          configToSave = await encryptConfig(formDef.fields, defaults);
+        }
+      }
+
+      await saveConfig(slug, configToSave);
+      addToast({
+        type: "success",
+        title: `${formDef?.name || slug} installed`,
+        message: "Configure it in the Skills page.",
+      });
     } catch (err) {
       console.error("[learn] Install failed:", err);
+      addToast({
+        type: "error",
+        title: "Install failed",
+        message: err instanceof Error ? err.message : "Please try again.",
+      });
     } finally {
       setInstalling(null);
     }

@@ -1,10 +1,15 @@
+import * as fs from "fs";
+import * as path from "path";
 import { ApiClient, ActivityEventPayload } from "./api-client";
 
+const QUEUE_FILE = path.join(__dirname, "..", ".clawsight-queue.json");
+
 /**
- * Offline-capable event queue.
+ * Offline-capable event queue with disk persistence.
  *
  * Buffers activity events locally and batch-syncs to the API.
  * If the API is unreachable, events are queued until connectivity returns.
+ * The queue is persisted to disk so events survive plugin crashes and restarts.
  */
 export class EventQueue {
   private queue: ActivityEventPayload[] = [];
@@ -12,11 +17,15 @@ export class EventQueue {
   private batchSize: number;
   private maxSize: number;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
+  private dirty = false;
 
   constructor(api: ApiClient, batchSize: number, maxSize: number) {
     this.api = api;
     this.batchSize = batchSize;
     this.maxSize = maxSize;
+
+    // Restore any events persisted from a previous session
+    this.loadFromDisk();
 
     // Auto-flush every 10 seconds
     this.flushTimer = setInterval(() => this.flush(), 10_000);
@@ -29,6 +38,7 @@ export class EventQueue {
       console.warn("[ClawSight] Event queue full, dropping oldest event");
     }
     this.queue.push(event);
+    this.dirty = true;
 
     // Flush immediately if batch size reached
     if (this.queue.length >= this.batchSize) {
@@ -49,6 +59,9 @@ export class EventQueue {
         `[ClawSight] Sync failed, ${this.queue.length} events queued`
       );
     }
+
+    // Persist remaining queue to disk (whether flush succeeded or not)
+    this.saveToDisk();
   }
 
   get size(): number {
@@ -59,6 +72,46 @@ export class EventQueue {
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
+    }
+    // Save any remaining events before shutdown
+    this.saveToDisk();
+  }
+
+  private saveToDisk(): void {
+    if (!this.dirty && this.queue.length === 0) return;
+
+    try {
+      if (this.queue.length === 0) {
+        // Clean up file when queue is empty
+        if (fs.existsSync(QUEUE_FILE)) {
+          fs.unlinkSync(QUEUE_FILE);
+        }
+      } else {
+        fs.writeFileSync(QUEUE_FILE, JSON.stringify(this.queue), "utf-8");
+      }
+      this.dirty = false;
+    } catch (err) {
+      console.warn("[ClawSight] Failed to persist event queue to disk:", err);
+    }
+  }
+
+  private loadFromDisk(): void {
+    try {
+      if (!fs.existsSync(QUEUE_FILE)) return;
+
+      const raw = fs.readFileSync(QUEUE_FILE, "utf-8");
+      const events: ActivityEventPayload[] = JSON.parse(raw);
+
+      if (Array.isArray(events) && events.length > 0) {
+        this.queue.unshift(...events.slice(0, this.maxSize));
+        console.log(
+          `[ClawSight] Restored ${events.length} events from previous session`
+        );
+      }
+
+      fs.unlinkSync(QUEUE_FILE);
+    } catch (err) {
+      console.warn("[ClawSight] Failed to load persisted event queue:", err);
     }
   }
 }

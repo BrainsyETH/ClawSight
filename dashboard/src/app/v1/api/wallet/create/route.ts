@@ -67,6 +67,26 @@ export async function POST(request: NextRequest) {
     // Create an EVM account on Base
     const account = await cdp.evm.createAccount();
 
+    // Persist agent wallet address to DB if caller is authenticated.
+    // The caller may already have a session (onboarding flow sends
+    // this after SIWE login). Fire-and-forget — don't block wallet creation.
+    const authHeader = request.headers.get("authorization");
+    if (authHeader) {
+      try {
+        const { createServerSupabaseClient, getAuthenticatedWallet } = await import("@/lib/server/supabase");
+        const wallet = await getAuthenticatedWallet();
+        if (wallet) {
+          const supabase = await createServerSupabaseClient();
+          await supabase
+            .from("users")
+            .update({ agent_wallet_address: account.address.toLowerCase() })
+            .eq("wallet_address", wallet);
+        }
+      } catch {
+        // Non-critical — onboarding PATCH is the backup
+      }
+    }
+
     return NextResponse.json({
       address: account.address,
     });

@@ -5,6 +5,8 @@ import { createHash } from "crypto";
 import { createPublicClient, http } from "viem";
 import { base } from "viem/chains";
 import { createAdminSupabaseClient } from "@/lib/server/supabase-admin";
+import { consumeNonce } from "@/lib/server/auth";
+import "@/lib/server/validate-env";
 
 /** Viem public client for on-chain EIP-1271 signature verification (smart wallets). */
 const publicClient = createPublicClient({
@@ -55,14 +57,24 @@ export async function POST(request: NextRequest) {
     //    what the wallet signed) rather than re-serializing with
     //    prepareMessage(), which can differ after a parse round-trip.
     let parsedAddress: string;
+    let parsedNonce: string;
     try {
       const siweMessage = new SiweMessage(message);
       parsedAddress = siweMessage.address;
+      parsedNonce = siweMessage.nonce;
     } catch (err) {
       console.error("[siwe] Failed to parse SIWE message:", err);
       return NextResponse.json(
         { error: "Invalid SIWE message format" },
         { status: 400 }
+      );
+    }
+
+    // Validate nonce was issued by this server and hasn't been used
+    if (!parsedNonce || !consumeNonce(parsedNonce)) {
+      return NextResponse.json(
+        { error: "Invalid or expired nonce. Request a new one from /v1/api/auth/nonce." },
+        { status: 401 }
       );
     }
 
