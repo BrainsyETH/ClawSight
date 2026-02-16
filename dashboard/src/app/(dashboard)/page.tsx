@@ -7,6 +7,7 @@ import { useWalletBalance } from "@/hooks/use-wallet-balance";
 import {
   useActivityEvents,
   useSkillConfigs,
+  useUser,
 } from "@/hooks/use-supabase-data";
 import { StatusIndicator } from "@/components/shared/status-indicator";
 import { WalletCard } from "@/components/dashboard/wallet-card";
@@ -109,6 +110,7 @@ export default function DashboardPage() {
   const { walletAddress } = useAuth();
   const agentStatus = useAgentStatus(walletAddress ?? undefined);
   const { balance: walletBalance } = useWalletBalance(walletAddress);
+  const { user } = useUser(walletAddress ?? undefined);
   const { events, loading: eventsLoading, redactEvent, redactEventFields } = useActivityEvents(walletAddress ?? undefined);
   const { configs, loading: configsLoading } = useSkillConfigs(walletAddress ?? undefined);
 
@@ -171,6 +173,7 @@ export default function DashboardPage() {
           balance={walletBalance ?? 0}
           todaySpending={spending.totalSpend}
           weekSpending={spending.totalSpend}
+          agentWalletAddress={user?.agent_wallet_address}
         />
       </div>
 

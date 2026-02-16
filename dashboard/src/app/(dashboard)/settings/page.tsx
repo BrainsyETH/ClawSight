@@ -30,12 +30,12 @@ export default function SettingsPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Agent wallet (for email/Track B users)
-  const [agentWalletAddress] = useState(() =>
-    typeof window !== "undefined"
+  // Agent wallet — prefer DB value, fall back to localStorage
+  const agentWalletAddress =
+    user?.agent_wallet_address ??
+    (typeof window !== "undefined"
       ? localStorage.getItem("clawsight_agent_wallet_address")
-      : null
-  );
+      : null);
   const [walletCopied, setWalletCopied] = useState(false);
 
   const handleCopyWallet = async (text: string) => {

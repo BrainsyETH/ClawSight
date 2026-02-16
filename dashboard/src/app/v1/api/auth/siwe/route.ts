@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
 
     // 3. Sign a JWT that Supabase RLS can use
     const now = Math.floor(Date.now() / 1000);
-    const expiresIn = 60 * 60; // 1 hour
+    const expiresIn = 24 * 60 * 60; // 24 hours
 
     const secret = new TextEncoder().encode(jwtSecret);
     const accessToken = await new SignJWT({

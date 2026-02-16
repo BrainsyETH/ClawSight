@@ -257,7 +257,7 @@ function SkillListingCard({
             <Badge variant="secondary" className="text-[10px] capitalize shrink-0">
               {skill.category}
             </Badge>
-            {skill.installs != null && (
+            {skill.installs != null && skill.installs > 0 && (
               <span className="text-xs text-gray-400 shrink-0">
                 {formatInstalls(skill.installs)}
               </span>

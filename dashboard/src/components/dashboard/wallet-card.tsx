@@ -9,19 +9,28 @@ interface WalletCardProps {
   balance: number;
   todaySpending: number;
   weekSpending: number;
+  /** Agent wallet address from DB (preferred) or localStorage fallback. */
+  agentWalletAddress?: string | null;
 }
 
 export function WalletCard({
   balance,
   todaySpending,
   weekSpending,
+  agentWalletAddress: agentWalletProp,
 }: WalletCardProps) {
-  const [agentAddress, setAgentAddress] = useState<string | null>(null);
+  const [agentAddress, setAgentAddress] = useState<string | null>(agentWalletProp ?? null);
   const [copied, setCopied] = useState(false);
 
+  // Use prop from DB if available, otherwise fall back to localStorage
   useEffect(() => {
-    setAgentAddress(localStorage.getItem("clawsight_agent_wallet_address"));
-  }, []);
+    if (agentWalletProp) {
+      setAgentAddress(agentWalletProp);
+    } else {
+      const stored = localStorage.getItem("clawsight_agent_wallet_address");
+      if (stored) setAgentAddress(stored);
+    }
+  }, [agentWalletProp]);
 
   const handleCopy = async () => {
     if (!agentAddress) return;

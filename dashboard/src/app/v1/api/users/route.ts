@@ -56,6 +56,7 @@ export async function PATCH(request: NextRequest) {
     "monthly_spend_cap_usdc",
     "data_retention_days",
     "openclaw_gateway_url",
+    "agent_wallet_address",
     "onboarding_completed",
     "sync_activity",
     "sync_wallet",
@@ -159,6 +160,18 @@ export async function PATCH(request: NextRequest) {
         );
       }
     }
+  }
+
+  // Validate agent_wallet_address (must be an Ethereum address)
+  if (updates.agent_wallet_address !== undefined && updates.agent_wallet_address !== null) {
+    const addr = String(updates.agent_wallet_address);
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
+      return NextResponse.json(
+        { error: "agent_wallet_address must be a valid Ethereum address" },
+        { status: 400 }
+      );
+    }
+    updates.agent_wallet_address = addr.toLowerCase();
   }
 
   // Validate onboarding_completed (must be boolean)
