@@ -93,35 +93,63 @@ export async function POST(request: NextRequest) {
     const email = `${walletAddress}@wallet.clawsight.app`;
 
     // 2. Ensure user exists in Supabase auth
-    const admin = createAdminSupabaseClient();
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const jwtSecret = process.env.SUPABASE_JWT_SECRET;
 
-    const { error: createError } = await admin.auth.admin.createUser({
-      id: userId,
-      email,
-      email_confirm: true,
-      user_metadata: { wallet_address: walletAddress },
-      app_metadata: { wallet_address: walletAddress },
-    });
-
-    // Ignore "user already exists" errors
-    if (createError && !createError.message.includes("already")) {
-      console.error("[siwe] Failed to create auth user:", createError);
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error("[siwe] Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
       return NextResponse.json(
-        { error: "Failed to create user session" },
+        { error: "Server misconfigured: Supabase credentials missing" },
         { status: 500 }
+      );
+    }
+
+    if (!jwtSecret) {
+      console.error("[siwe] SUPABASE_JWT_SECRET not configured");
+      return NextResponse.json(
+        { error: "Server misconfigured: JWT secret missing" },
+        { status: 500 }
+      );
+    }
+
+    let admin;
+    try {
+      admin = createAdminSupabaseClient();
+    } catch (err) {
+      console.error("[siwe] Failed to create Supabase admin client:", err);
+      return NextResponse.json(
+        { error: "Server misconfigured: cannot connect to auth service" },
+        { status: 500 }
+      );
+    }
+
+    try {
+      const { error: createError } = await admin.auth.admin.createUser({
+        id: userId,
+        email,
+        email_confirm: true,
+        user_metadata: { wallet_address: walletAddress },
+        app_metadata: { wallet_address: walletAddress },
+      });
+
+      // Ignore "user already exists" errors
+      if (createError && !createError.message.includes("already")) {
+        console.error("[siwe] Failed to create auth user:", createError);
+        return NextResponse.json(
+          { error: "Failed to create user session" },
+          { status: 500 }
+        );
+      }
+    } catch (err) {
+      console.error("[siwe] Supabase createUser threw:", err);
+      return NextResponse.json(
+        { error: "Auth service unavailable" },
+        { status: 502 }
       );
     }
 
     // 3. Sign a JWT that Supabase RLS can use
-    const jwtSecret = process.env.SUPABASE_JWT_SECRET;
-    if (!jwtSecret) {
-      console.error("[siwe] SUPABASE_JWT_SECRET not configured");
-      return NextResponse.json(
-        { error: "Server misconfigured" },
-        { status: 500 }
-      );
-    }
-
     const now = Math.floor(Date.now() / 1000);
     const expiresIn = 60 * 60; // 1 hour
 
