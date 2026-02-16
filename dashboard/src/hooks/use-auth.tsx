@@ -64,10 +64,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Returns the expiry timestamp (ms) of the new JWT, or null on failure.
    */
   const authenticateWithSiwe = useCallback(
-    async (addr: string): Promise<number | null> => {
+    async (addr: string): Promise<number> => {
       // Fetch server-issued nonce (prevents replay attacks)
       const nonceRes = await fetch("/v1/api/auth/nonce");
-      if (!nonceRes.ok) return null;
+      if (!nonceRes.ok) {
+        throw new Error("Failed to get authentication nonce. Please try again.");
+      }
       const { nonce } = await nonceRes.json();
       const siweMessage = createSiweMessage(addr, nonce);
       const message = siweMessage.prepareMessage();
@@ -79,7 +81,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ message, signature }),
       });
 
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Sign-in verification failed. Please try again.");
+      }
 
       const { access_token, refresh_token, expires_in } = await res.json();
 
@@ -89,7 +94,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         refresh_token,
       });
 
-      if (error) return null;
+      if (error) {
+        throw new Error("Failed to establish session. Please try again.");
+      }
 
       // Create user row if needed
       await supabase.from("users").upsert(
@@ -233,10 +240,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const addr = result.accounts[0];
 
         const expiry = await authenticateWithSiwe(addr);
-        if (!expiry) {
-          throw new Error("SIWE authentication failed");
-        }
-
         setWalletAddress(addr);
         setAuthMethod("siwe");
         localStorage.setItem("clawsight_wallet", addr);
