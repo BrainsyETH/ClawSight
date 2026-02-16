@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, checkRateLimit } from "@/lib/server/auth";
+import { billingGate } from "@/lib/server/x402";
 
 /**
  * GET /v1/api/config
@@ -13,6 +14,10 @@ export async function GET(request: NextRequest) {
   if (!checkRateLimit(wallet, "config-read", 60, 60_000)) {
     return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
   }
+
+  // Billing: config reads are free but counted
+  const billing = await billingGate(supabase, wallet, "config_read");
+  if (billing) return billing;
 
   const { data, error } = await supabase
     .from("skill_configs")
@@ -42,6 +47,12 @@ export async function PUT(request: NextRequest) {
   if (!checkRateLimit(wallet, "config-write", 20, 60_000)) {
     return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
   }
+
+  // Billing: config writes cost $0.001
+  const billing = await billingGate(supabase, wallet, "config_write", {
+    paymentHeader: request.headers.get("X-Payment"),
+  });
+  if (billing) return billing;
 
   const body = await request.json();
   const { skill_slug, enabled, config, config_source, expected_updated_at } = body;

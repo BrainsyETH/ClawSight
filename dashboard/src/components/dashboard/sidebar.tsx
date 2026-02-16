@@ -11,6 +11,7 @@ import {
   Zap,
   Compass,
   User,
+  CreditCard,
   Settings,
   LogOut,
 } from "lucide-react";
@@ -35,6 +36,11 @@ const NAV_ITEMS = [
     href: "/character",
     icon: User,
     label: "Agent Settings",
+  },
+  {
+    href: "/billing",
+    icon: CreditCard,
+    label: "Billing",
   },
   {
     href: "/settings",
