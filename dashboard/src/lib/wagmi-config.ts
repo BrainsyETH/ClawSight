@@ -8,7 +8,7 @@ export const wagmiConfig = createConfig({
     injected(),
     coinbaseWallet({
       appName: "ClawSight",
-      preference: "smartWalletOnly",
+      preference: { options: "smartWalletOnly" },
     }),
     ...(process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID
       ? [
