@@ -328,13 +328,13 @@ export default function SettingsPage() {
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Auth method</span>
               <Badge variant="secondary">
-                {authMethod === "email" ? "Email" : authMethod === "siwe" ? "SIWE" : "Unknown"}
+                {authMethod === "siwe" ? "Wallet (SIWE)" : "Unknown"}
               </Badge>
             </div>
             {agentWalletAddress && (
               <div className="flex justify-between text-sm mt-2">
-                <span className="text-gray-500">Wallet type</span>
-                <Badge variant="secondary">Generated (x402)</Badge>
+                <span className="text-gray-500">Agent wallet</span>
+                <Badge variant="secondary">CDP (x402)</Badge>
               </div>
             )}
           </div>
