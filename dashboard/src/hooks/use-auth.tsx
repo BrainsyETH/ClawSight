@@ -277,14 +277,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const disconnect = useCallback(() => {
     if (refreshTimer.current) clearTimeout(refreshTimer.current);
-    wagmiDisconnect();
+
+    // Clear local state first so the UI updates immediately
     setWalletAddress(null);
     setAuthMethod(null);
     localStorage.removeItem("clawsight_wallet");
     localStorage.removeItem("clawsight_auth_method");
     localStorage.removeItem("clawsight_onboarded");
     localStorage.removeItem("clawsight_agent_wallet_address");
-    createClient().auth.signOut();
+
+    // Sign out from Supabase (non-blocking)
+    createClient().auth.signOut().catch(() => {});
+
+    // Disconnect wagmi last — wrapped in try/catch because
+    // Coinbase Smart Wallet may trigger a passkey prompt on
+    // disconnect, and if the user cancels it we still want
+    // the sign-out to complete.
+    try {
+      wagmiDisconnect();
+    } catch {
+      // Ignored — local state is already cleared
+    }
   }, [wagmiDisconnect]);
 
   const signMsg = useCallback(
