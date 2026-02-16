@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,9 +20,7 @@ import {
   Star,
   ArrowRight,
   ArrowLeft,
-  ExternalLink,
   RefreshCw,
-  Cloud,
   Server,
   Shield,
   Copy,
@@ -103,10 +101,10 @@ export function OnboardingFlow({
   const [creatingAgentWallet, setCreatingAgentWallet] = useState(false);
   const [addressCopied, setAddressCopied] = useState(false);
 
-  // Track B — OpenClaw setup
-  const [openclawChoice, setOpenclawChoice] = useState<
-    "cloud" | "selfhost" | null
-  >(null);
+  // Track B — OpenClaw guided setup
+  const [openclawGuideStep, setOpenclawGuideStep] = useState<
+    "intro" | "install" | "connect"
+  >("intro");
   const [openclawGatewayUrl, setOpenclawGatewayUrl] = useState(
     "http://localhost:3080"
   );
@@ -115,6 +113,7 @@ export function OnboardingFlow({
   const [openclawError, setOpenclawError] = useState<
     "network" | "cors" | false
   >(false);
+  const [commandCopied, setCommandCopied] = useState(false);
 
   // Shared — name + skills
   const [agentName, setAgentName] = useState("");
@@ -166,10 +165,11 @@ export function OnboardingFlow({
           signal: AbortSignal.timeout(5000),
         });
         if (probe.type === "opaque") {
-          setDetectError("cors");
-        } else {
-          setDetectError("network");
+          // Something is responding at this address — treat as success
+          confirmGateway(base);
+          return;
         }
+        setDetectError("network");
       } catch {
         setDetectError("network");
       }
@@ -246,10 +246,13 @@ export function OnboardingFlow({
           signal: AbortSignal.timeout(5000),
         });
         if (probe.type === "opaque") {
-          setOpenclawError("cors");
-        } else {
-          setOpenclawError("network");
+          // Something is responding — treat as success
+          setOpenclawDetected(true);
+          saveGatewayUrl(base);
+          setTimeout(() => setTrackBStep("name"), 800);
+          return;
         }
+        setOpenclawError("network");
       } catch {
         setOpenclawError("network");
       }
@@ -258,12 +261,31 @@ export function OnboardingFlow({
     }
   };
 
-  const confirmOpenclawGateway = () => {
-    const base = openclawGatewayUrl.replace(/\/+$/, "");
-    setOpenclawDetected(true);
-    saveGatewayUrl(base);
-    setTimeout(() => setTrackBStep("name"), 800);
+  const handleSkipGateway = () => {
+    // Let user skip gateway setup — they can configure it later in Settings
+    if (track === "a") setTrackAStep("name");
+    else setTrackBStep("name");
   };
+
+  // Auto-probe localhost when Track B enters the connect sub-step
+  const openclawAutoProbed = useRef(false);
+  useEffect(() => {
+    if (
+      track === "b" &&
+      trackBStep === "openclaw" &&
+      openclawGuideStep === "connect" &&
+      !openclawDetected
+    ) {
+      if (!openclawAutoProbed.current) {
+        openclawAutoProbed.current = true;
+        handleOpenclawDetect();
+      }
+    }
+    // Reset the ref when leaving the connect step
+    if (openclawGuideStep !== "connect") {
+      openclawAutoProbed.current = false;
+    }
+  }, [openclawGuideStep, trackBStep, track]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Shared handlers ----
 
@@ -567,7 +589,7 @@ export function OnboardingFlow({
             detected={detected}
             detectError={detectError}
             onDetect={() => handleDetect()}
-            onManualConfirm={() => confirmGateway(gatewayUrl.replace(/\/+$/, ""))}
+            onSkip={handleSkipGateway}
           />
         )}
 
@@ -757,265 +779,351 @@ export function OnboardingFlow({
         )}
 
         {/* ================================================
-            TRACK B — STEP 3: SETUP OPENCLAW
+            TRACK B — STEP 3: GUIDED OPENCLAW SETUP
         ================================================ */}
         {track === "b" && trackBStep === "openclaw" && (
           <Card>
             <CardContent className="p-8">
-              <div className="text-center mb-6">
-                <Cloud
-                  className="w-12 h-12 text-red-500 mx-auto mb-4"
-                  aria-hidden="true"
-                />
-                <h2 className="text-xl font-semibold mb-2">
-                  Set Up OpenClaw
-                </h2>
-                <p className="text-gray-500">
-                  OpenClaw is the AI agent that ClawSight manages. Choose how
-                  you&apos;d like to run it.
-                </p>
-              </div>
+              {/* ---- Sub-step: Intro ---- */}
+              {openclawGuideStep === "intro" && (
+                <div>
+                  <div className="text-center mb-6">
+                    <div className="w-16 h-16 rounded-2xl bg-red-100 flex items-center justify-center mx-auto mb-4">
+                      <Zap className="w-8 h-8 text-red-500" aria-hidden="true" />
+                    </div>
+                    <h2 className="text-xl font-semibold mb-2">
+                      Connect Your AI Agent
+                    </h2>
+                    <p className="text-gray-500">
+                      One last thing &mdash; your AI agent needs a home.
+                    </p>
+                  </div>
 
-              {!openclawChoice && (
-                <div className="space-y-3">
-                  <Explainer question="What is OpenClaw and why do I need it?">
-                    <p className="mb-2">
-                      <strong>OpenClaw</strong> is the AI engine that powers your agent. It&apos;s
-                      an open-source program that runs either on your own computer or in the cloud.
-                    </p>
-                    <p className="mb-2">
-                      <strong>ClawSight</strong> (this dashboard) connects to OpenClaw to monitor
-                      what your agent is doing, configure its skills, and control spending.
-                    </p>
-                    <p>
-                      <strong>Cloud</strong> = easiest, runs on someone else&apos;s server. <strong>Self-host</strong> = you run it on your own machine for full privacy and control.
-                    </p>
-                  </Explainer>
-
-                  <button
-                    type="button"
-                    onClick={() => setOpenclawChoice("cloud")}
-                    className="w-full text-left p-4 rounded-lg border border-gray-200 hover:border-red-300 hover:bg-red-50/50 transition-all"
-                  >
+                  <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
                     <div className="flex items-start gap-3">
-                      <Cloud className="w-5 h-5 text-red-500 mt-0.5" />
+                      <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center shrink-0 text-sm">
+                        &#x1F9E0;
+                      </div>
                       <div>
-                        <p className="text-sm font-semibold text-gray-900">
-                          Deploy to cloud
+                        <p className="text-sm font-medium text-gray-900">Think of it like this</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          <strong>OpenClaw</strong> = your AI agent (the brain)<br />
+                          <strong>ClawSight</strong> = this dashboard (the remote control)
                         </p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          One-click deploy to a cloud provider. Easiest option
-                          — no hardware needed.
+                        <p className="text-xs text-gray-400 mt-2">
+                          OpenClaw runs on your computer. ClawSight lets you
+                          monitor it, pick skills, and set spending limits.
                         </p>
                       </div>
                     </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setOpenclawChoice("selfhost")}
-                    className="w-full text-left p-4 rounded-lg border border-gray-200 hover:border-red-300 hover:bg-red-50/50 transition-all"
-                  >
-                    <div className="flex items-start gap-3">
-                      <Server className="w-5 h-5 text-gray-600 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">
-                          Self-host
-                        </p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          Run OpenClaw on your own machine or server. Full
-                          control.
-                        </p>
-                      </div>
-                    </div>
-                  </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Button
+                      onClick={() => setOpenclawGuideStep("install")}
+                      size="lg"
+                      className="w-full gap-2"
+                    >
+                      Set up OpenClaw
+                      <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setOpenclawGuideStep("connect")}
+                      size="lg"
+                      className="w-full gap-2"
+                    >
+                      I already have OpenClaw running
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={handleSkipGateway}
+                      className="text-sm text-gray-400 hover:text-gray-600 mx-auto block mt-2"
+                    >
+                      I&apos;ll set this up later
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {/* Cloud deploy guidance */}
-              {openclawChoice === "cloud" && !openclawDetected && (
-                <div className="space-y-4">
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-sm font-medium text-blue-800 mb-3">
-                      Deploy OpenClaw in minutes
+              {/* ---- Sub-step: Install ---- */}
+              {openclawGuideStep === "install" && (
+                <div>
+                  <div className="text-center mb-6">
+                    <Download
+                      className="w-12 h-12 text-red-500 mx-auto mb-4"
+                      aria-hidden="true"
+                    />
+                    <h2 className="text-xl font-semibold mb-2">
+                      Install OpenClaw
+                    </h2>
+                    <p className="text-gray-500">
+                      Three quick steps and your agent is running.
                     </p>
-                    <div className="space-y-3">
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Step 1 */}
+                    <div className="p-4 rounded-lg border border-gray-200">
                       <div className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded-full bg-blue-200 flex items-center justify-center text-xs font-bold text-blue-800 shrink-0">
+                        <div className="w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center text-sm font-bold shrink-0">
                           1
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-blue-900">
-                            Choose a provider
+                          <p className="text-sm font-medium text-gray-900">
+                            Open a terminal
                           </p>
-                          <p className="text-xs text-blue-700">
-                            Railway, Fly.io, or any Docker host
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded-full bg-blue-200 flex items-center justify-center text-xs font-bold text-blue-800 shrink-0">
-                          2
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-blue-900">
-                            Run the deploy command
-                          </p>
-                          <div className="mt-1 p-2 bg-gray-900 rounded text-xs font-mono text-green-400 flex items-center gap-2">
-                            <Terminal className="w-3 h-3 shrink-0" />
-                            <span className="break-all">
-                              docker run -d -p 3080:3080 openclaw/openclaw
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div className="w-6 h-6 rounded-full bg-blue-200 flex items-center justify-center text-xs font-bold text-blue-800 shrink-0">
-                          3
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-blue-900">
-                            Enter your gateway URL below
-                          </p>
-                          <p className="text-xs text-blue-700">
-                            Use the public URL from your cloud provider
+                          <p className="text-xs text-gray-500 mt-1">
+                            <strong>Mac:</strong> Spotlight &rarr; type &quot;Terminal&quot;<br />
+                            <strong>Windows:</strong> search &quot;PowerShell&quot;<br />
+                            <strong>Linux:</strong> Ctrl+Alt+T
                           </p>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div>
-                    <label
-                      htmlFor="cloud-gateway-url"
-                      className="text-xs font-medium text-gray-600 mb-1 block"
+                    {/* Step 2 */}
+                    <div className="p-4 rounded-lg border border-gray-200">
+                      <div className="flex items-start gap-3">
+                        <div className="w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center text-sm font-bold shrink-0">
+                          2
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 mb-2">
+                            Paste this command and press Enter
+                          </p>
+                          <CopyCommand
+                            command="npx openclaw@latest init && npx openclaw start"
+                            copied={commandCopied}
+                            onCopy={() => {
+                              navigator.clipboard.writeText(
+                                "npx openclaw@latest init && npx openclaw start"
+                              );
+                              setCommandCopied(true);
+                              setTimeout(() => setCommandCopied(false), 2000);
+                            }}
+                          />
+                          <p className="text-xs text-gray-400 mt-2">
+                            This downloads and starts OpenClaw. It may take a minute.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step 3 */}
+                    <div className="p-4 rounded-lg border border-gray-200">
+                      <div className="flex items-start gap-3">
+                        <div className="w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center text-sm font-bold shrink-0">
+                          3
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">
+                            Wait for &quot;Ready&quot; in the terminal
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            You&apos;ll see something like{" "}
+                            <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[11px]">
+                              OpenClaw ready on port 3080
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <Button
+                      onClick={() => {
+                        openclawAutoProbed.current = false;
+                        setOpenclawGuideStep("connect");
+                      }}
+                      size="lg"
+                      className="w-full gap-2"
                     >
-                      Gateway URL
-                    </label>
-                    <Input
-                      id="cloud-gateway-url"
-                      value={openclawGatewayUrl}
-                      onChange={(e) => setOpenclawGatewayUrl(e.target.value)}
-                      placeholder="https://your-openclaw.up.railway.app"
-                      className="font-mono text-sm"
-                    />
+                      I see &quot;Ready&quot; &mdash; connect now
+                      <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                    </Button>
+
+                    <Explainer question="What does this command do?">
+                      <p className="mb-2">
+                        <code className="bg-blue-100 px-1 rounded">npx</code> is a tool
+                        that comes with Node.js. It downloads and runs OpenClaw without
+                        permanently installing anything.
+                      </p>
+                      <p className="mb-2">
+                        <code className="bg-blue-100 px-1 rounded">init</code> creates a
+                        config file. <code className="bg-blue-100 px-1 rounded">start</code>{" "}
+                        launches your AI agent.
+                      </p>
+                      <p>
+                        Everything runs locally on your machine. Nothing is sent to
+                        external servers unless you enable specific skills.
+                      </p>
+                    </Explainer>
+
+                    <Explainer question="Don't have Node.js installed?">
+                      <p className="mb-2">
+                        Node.js is a free tool needed to run OpenClaw. To install it:
+                      </p>
+                      <ol className="list-decimal list-inside space-y-1 mb-2">
+                        <li>
+                          Visit <strong>nodejs.org</strong> and download the LTS version
+                        </li>
+                        <li>Run the installer (just click Next through the steps)</li>
+                        <li>Close and re-open your terminal</li>
+                        <li>Then paste the command from Step 2 above</li>
+                      </ol>
+                    </Explainer>
+
+                    <div className="flex justify-between items-center">
+                      <button
+                        type="button"
+                        onClick={() => setOpenclawGuideStep("intro")}
+                        className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1"
+                      >
+                        <ArrowLeft className="w-3 h-3" />
+                        Back
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSkipGateway}
+                        className="text-sm text-gray-400 hover:text-gray-600"
+                      >
+                        Skip for now
+                      </button>
+                    </div>
                   </div>
-
-                  <Button
-                    onClick={handleOpenclawDetect}
-                    disabled={
-                      openclawDetecting || !openclawGatewayUrl.trim()
-                    }
-                    size="lg"
-                    className="w-full gap-2"
-                  >
-                    {openclawDetecting ? (
-                      <>
-                        <Loader2
-                          className="w-4 h-4 animate-spin"
-                          aria-hidden="true"
-                        />
-                        Connecting...
-                      </>
-                    ) : (
-                      <>
-                        <Search className="w-4 h-4" aria-hidden="true" />
-                        Connect
-                      </>
-                    )}
-                  </Button>
-
-                  <GatewayErrorFeedback
-                    error={openclawError}
-                    url={openclawGatewayUrl}
-                    onRetry={handleOpenclawDetect}
-                    onManualConfirm={confirmOpenclawGateway}
-                    detecting={openclawDetecting}
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => setOpenclawChoice(null)}
-                    className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1 mx-auto"
-                  >
-                    <ArrowLeft className="w-3 h-3" />
-                    Back to options
-                  </button>
                 </div>
               )}
 
-              {/* Self-host guidance */}
-              {openclawChoice === "selfhost" && !openclawDetected && (
-                <div className="space-y-4">
-                  <div>
-                    <label
-                      htmlFor="selfhost-gateway-url"
-                      className="text-xs font-medium text-gray-600 mb-1 block"
-                    >
-                      Gateway URL
-                    </label>
-                    <Input
-                      id="selfhost-gateway-url"
-                      value={openclawGatewayUrl}
-                      onChange={(e) => setOpenclawGatewayUrl(e.target.value)}
-                      placeholder="http://localhost:3080"
-                      className="font-mono text-sm"
+              {/* ---- Sub-step: Connect (auto-probes on enter) ---- */}
+              {openclawGuideStep === "connect" && !openclawDetected && (
+                <div>
+                  <div className="text-center mb-6">
+                    <Search
+                      className="w-12 h-12 text-red-500 mx-auto mb-4"
+                      aria-hidden="true"
                     />
-                    <p className="text-[11px] text-gray-400 mt-1">
-                      Local: http://localhost:3080 &middot; Remote:
-                      http://your-server-ip:3080
+                    <h2 className="text-xl font-semibold mb-2">
+                      Connecting to Your Agent
+                    </h2>
+                    <p className="text-gray-500">
+                      {openclawDetecting
+                        ? "Looking for OpenClaw on your machine..."
+                        : "Let\u2019s find your running OpenClaw instance."}
                     </p>
                   </div>
 
-                  <Button
-                    onClick={handleOpenclawDetect}
-                    disabled={
-                      openclawDetecting || !openclawGatewayUrl.trim()
-                    }
-                    size="lg"
-                    className="w-full gap-2"
-                  >
-                    {openclawDetecting ? (
-                      <>
-                        <Loader2
-                          className="w-4 h-4 animate-spin"
-                          aria-hidden="true"
-                        />
-                        Connecting...
-                      </>
-                    ) : (
-                      <>
-                        <Search className="w-4 h-4" aria-hidden="true" />
-                        Connect
-                      </>
-                    )}
-                  </Button>
+                  {openclawDetecting && (
+                    <div className="flex flex-col items-center gap-3 mb-6">
+                      <Loader2 className="w-8 h-8 animate-spin text-red-500" aria-hidden="true" />
+                      <p className="text-sm text-gray-500">
+                        Checking {openclawGatewayUrl}...
+                      </p>
+                    </div>
+                  )}
 
-                  <GatewayErrorFeedback
-                    error={openclawError}
-                    url={openclawGatewayUrl}
-                    onRetry={handleOpenclawDetect}
-                    onManualConfirm={confirmOpenclawGateway}
-                    detecting={openclawDetecting}
-                  />
+                  {openclawError && !openclawDetecting && (
+                    <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                      <p className="text-sm font-medium text-amber-800 mb-2">
+                        Not detected yet
+                      </p>
+                      <p className="text-sm text-amber-700 mb-3">
+                        Make sure OpenClaw is running and showing &quot;Ready&quot;
+                        in your terminal.
+                      </p>
+                      <div className="space-y-3">
+                        <Button
+                          onClick={() => {
+                            openclawAutoProbed.current = false;
+                            setOpenclawError(false);
+                            handleOpenclawDetect();
+                          }}
+                          disabled={openclawDetecting}
+                          size="sm"
+                          className="w-full gap-2"
+                        >
+                          <RefreshCw className="w-3 h-3" aria-hidden="true" />
+                          Try again
+                        </Button>
 
-                  <button
-                    type="button"
-                    onClick={() => setOpenclawChoice(null)}
-                    className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1 mx-auto"
-                  >
-                    <ArrowLeft className="w-3 h-3" />
-                    Back to options
-                  </button>
+                        <details className="text-left">
+                          <summary className="text-xs font-medium text-gray-500 cursor-pointer flex items-center gap-1.5">
+                            <HelpCircle className="w-3.5 h-3.5" />
+                            Running OpenClaw on a different address?
+                          </summary>
+                          <div className="mt-2 space-y-2">
+                            <Input
+                              value={openclawGatewayUrl}
+                              onChange={(e) => setOpenclawGatewayUrl(e.target.value)}
+                              placeholder="http://your-server:3080"
+                              className="font-mono text-sm"
+                            />
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                openclawAutoProbed.current = false;
+                                setOpenclawError(false);
+                                handleOpenclawDetect();
+                              }}
+                              disabled={openclawDetecting}
+                              size="sm"
+                              className="w-full gap-2"
+                            >
+                              <Search className="w-3 h-3" aria-hidden="true" />
+                              Connect to this address
+                            </Button>
+                          </div>
+                        </details>
+                      </div>
+                    </div>
+                  )}
+
+                  {!openclawDetecting && !openclawError && (
+                    <Button
+                      onClick={handleOpenclawDetect}
+                      disabled={openclawDetecting}
+                      size="lg"
+                      className="w-full gap-2"
+                    >
+                      <Search className="w-4 h-4" aria-hidden="true" />
+                      Check connection
+                    </Button>
+                  )}
+
+                  <div className="flex justify-between items-center mt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOpenclawGuideStep("install");
+                        setOpenclawError(false);
+                      }}
+                      className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1"
+                    >
+                      <ArrowLeft className="w-3 h-3" />
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSkipGateway}
+                      className="text-sm text-gray-400 hover:text-gray-600"
+                    >
+                      Skip for now
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {/* Success */}
+              {/* ---- Success state ---- */}
               {openclawDetected && (
-                <div className="space-y-2 text-center">
-                  <div className="flex items-center justify-center gap-2 text-green-600 font-medium">
-                    <CheckCircle className="w-5 h-5" aria-hidden="true" />
-                    Connected to OpenClaw Gateway
+                <div className="text-center">
+                  <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle className="w-8 h-8 text-green-600" aria-hidden="true" />
                   </div>
+                  <h2 className="text-xl font-semibold mb-2">
+                    Agent Connected!
+                  </h2>
+                  <p className="text-gray-500 mb-2">
+                    Your OpenClaw agent is running and linked to this dashboard.
+                  </p>
                   <p className="text-xs text-gray-400 font-mono">
                     {openclawGatewayUrl}
                   </p>
@@ -1178,7 +1286,7 @@ function GatewayStep({
   detected,
   detectError,
   onDetect,
-  onManualConfirm,
+  onSkip,
 }: {
   url: string;
   onUrlChange: (v: string) => void;
@@ -1186,197 +1294,150 @@ function GatewayStep({
   detected: boolean;
   detectError: "network" | "cors" | false;
   onDetect: () => void;
-  onManualConfirm: () => void;
+  onSkip: () => void;
 }) {
+  // Auto-probe localhost on mount
+  const autoProbed = useRef(false);
+  useEffect(() => {
+    if (!autoProbed.current && !detected) {
+      autoProbed.current = true;
+      onDetect();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <Card>
       <CardContent className="p-8 text-center">
-        <Search
-          className="w-12 h-12 text-red-500 mx-auto mb-4"
-          aria-hidden="true"
-        />
-        <h2 className="text-xl font-semibold mb-2">
-          {detected ? "OpenClaw Connected!" : "Connect to OpenClaw Gateway"}
-        </h2>
-        <p className="text-gray-500 mb-6">
-          {detected
-            ? "Your OpenClaw instance is running and ready."
-            : "Enter your OpenClaw gateway URL, or auto-detect if it\u2019s running locally."}
-        </p>
-        {detected ? (
-          <div className="space-y-2">
-            <div className="flex items-center justify-center gap-2 text-green-600 font-medium">
-              <CheckCircle className="w-5 h-5" aria-hidden="true" />
-              Connected to OpenClaw Gateway
-            </div>
-            <p className="text-xs text-gray-400 font-mono">{url}</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="text-left">
-              <label
-                htmlFor="gateway-url"
-                className="text-xs font-medium text-gray-600 mb-1 block"
-              >
-                Gateway URL
-              </label>
-              <Input
-                id="gateway-url"
-                value={url}
-                onChange={(e) => onUrlChange(e.target.value)}
-                placeholder="http://localhost:3080"
-                className="font-mono text-sm"
-                aria-label="OpenClaw gateway URL"
-              />
-              <p className="text-[11px] text-gray-400 mt-1">
-                Local: http://localhost:3080 &middot; Remote:
-                http://your-server-ip:3080
-              </p>
-            </div>
-            <Button
-              onClick={onDetect}
-              disabled={detecting || !url.trim()}
-              size="lg"
-              className="w-full gap-2"
-            >
-              {detecting ? (
-                <>
-                  <Loader2
-                    className="w-4 h-4 animate-spin"
-                    aria-hidden="true"
-                  />
-                  Connecting...
-                </>
-              ) : (
-                <>
-                  <Search className="w-4 h-4" aria-hidden="true" />
-                  Connect
-                </>
-              )}
-            </Button>
-          </div>
+        {detecting && !detectError && (
+          <>
+            <Loader2
+              className="w-12 h-12 text-red-500 mx-auto mb-4 animate-spin"
+              aria-hidden="true"
+            />
+            <h2 className="text-xl font-semibold mb-2">
+              Looking for OpenClaw...
+            </h2>
+            <p className="text-gray-500 mb-6">
+              Checking {url} for a running instance.
+            </p>
+          </>
         )}
 
-        <GatewayErrorFeedback
-          error={detectError}
-          url={url}
-          onRetry={onDetect}
-          onManualConfirm={onManualConfirm}
-          detecting={detecting}
-        />
+        {detected && (
+          <>
+            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-8 h-8 text-green-600" />
+            </div>
+            <h2 className="text-xl font-semibold mb-2">
+              OpenClaw Connected!
+            </h2>
+            <p className="text-gray-500 mb-2">
+              Your OpenClaw instance is running and ready.
+            </p>
+            <p className="text-xs text-gray-400 font-mono">{url}</p>
+          </>
+        )}
+
+        {!detecting && !detected && (
+          <>
+            <Search
+              className="w-12 h-12 text-red-500 mx-auto mb-4"
+              aria-hidden="true"
+            />
+            <h2 className="text-xl font-semibold mb-2">
+              Connect to OpenClaw Gateway
+            </h2>
+            <p className="text-gray-500 mb-6">
+              We couldn&apos;t auto-detect a local instance. Enter your gateway URL below.
+            </p>
+
+            {detectError === "network" && (
+              <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg text-left">
+                <p className="text-sm font-medium text-amber-800 mb-1">
+                  Could not reach gateway
+                </p>
+                <p className="text-xs text-amber-700">
+                  No response from <span className="font-mono">{url}</span>. Make sure OpenClaw is running.
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div className="text-left">
+                <label
+                  htmlFor="gateway-url"
+                  className="text-xs font-medium text-gray-600 mb-1 block"
+                >
+                  Gateway URL
+                </label>
+                <Input
+                  id="gateway-url"
+                  value={url}
+                  onChange={(e) => onUrlChange(e.target.value)}
+                  placeholder="http://localhost:3080"
+                  className="font-mono text-sm"
+                  aria-label="OpenClaw gateway URL"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Local: http://localhost:3080 &middot; Remote:
+                  http://your-server-ip:3080
+                </p>
+              </div>
+              <Button
+                onClick={onDetect}
+                disabled={detecting || !url.trim()}
+                size="lg"
+                className="w-full gap-2"
+              >
+                <Search className="w-4 h-4" aria-hidden="true" />
+                Connect
+              </Button>
+              <button
+                type="button"
+                onClick={onSkip}
+                className="text-sm text-gray-400 hover:text-gray-600 mx-auto block"
+              >
+                I&apos;ll set this up later
+              </button>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );
 }
 
 // ============================================================
-// Gateway error feedback (shared between Track A and Track B)
+// Copy-able terminal command
 // ============================================================
 
-function GatewayErrorFeedback({
-  error,
-  url,
-  onRetry,
-  onManualConfirm,
-  detecting,
+function CopyCommand({
+  command,
+  copied,
+  onCopy,
 }: {
-  error: "network" | "cors" | false;
-  url: string;
-  onRetry: () => void;
-  onManualConfirm: () => void;
-  detecting: boolean;
+  command: string;
+  copied: boolean;
+  onCopy: () => void;
 }) {
-  if (!error) return null;
-
-  if (error === "cors") {
-    return (
-      <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg text-left">
-        <div className="flex items-start gap-2 mb-3">
-          <CheckCircle className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-medium text-green-800">
-              Gateway detected
-            </p>
-            <p className="text-sm text-green-700 mt-1">
-              Something is running at{" "}
-              <span className="font-mono text-xs">{url}</span>, but your
-              browser blocked the full response (CORS). This is normal for local
-              and remote gateways.
-            </p>
-          </div>
-        </div>
-        <p className="text-xs text-gray-600 mb-3">
-          If you&apos;re sure this is your OpenClaw instance, confirm below to
-          continue.
-        </p>
-        <div className="flex gap-2">
-          <Button size="sm" className="gap-1.5" onClick={onManualConfirm}>
-            <CheckCircle className="w-3 h-3" aria-hidden="true" />
-            Confirm &amp; Continue
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={onRetry}
-            disabled={detecting}
-          >
-            <RefreshCw className="w-3 h-3" aria-hidden="true" />
-            Retry
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg text-left">
-      <p className="text-sm font-medium text-amber-800 mb-2">
-        Could not reach gateway
-      </p>
-      <p className="text-sm text-amber-700 mb-3">
-        No response from <span className="font-mono text-xs">{url}</span>. Make
-        sure OpenClaw is running and the URL is correct.
-      </p>
-      <ul className="text-sm text-gray-600 space-y-1.5 mb-4">
-        <li className="flex items-start gap-2">
-          <span className="text-gray-400 mt-0.5">&bull;</span>
-          <span>Check that your OpenClaw instance is running</span>
-        </li>
-        <li className="flex items-start gap-2">
-          <span className="text-gray-400 mt-0.5">&bull;</span>
-          <span>
-            For remote machines, use the IP or hostname (e.g.
-            http://192.168.1.100:3080)
-          </span>
-        </li>
-        <li className="flex items-start gap-2">
-          <span className="text-gray-400 mt-0.5">&bull;</span>
-          <span>Ensure port 3080 is open and not blocked by a firewall</span>
-        </li>
-      </ul>
-      <div className="flex gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          onClick={() =>
-            window.open("https://github.com/OpenClaw/openclaw", "_blank")
-          }
-        >
-          <ExternalLink className="w-3 h-3" aria-hidden="true" />
-          View Docs
-        </Button>
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={onRetry}
-          disabled={detecting}
-        >
-          <RefreshCw className="w-3 h-3" aria-hidden="true" />
-          Try Again
-        </Button>
-      </div>
+    <div className="flex items-center gap-2 p-3 bg-gray-900 rounded-lg">
+      <Terminal className="w-4 h-4 text-gray-500 shrink-0" aria-hidden="true" />
+      <code className="text-sm font-mono text-green-400 flex-1 break-all select-all">
+        {command}
+      </code>
+      <button
+        type="button"
+        onClick={onCopy}
+        className="text-gray-400 hover:text-white shrink-0 transition-colors"
+        aria-label="Copy command"
+      >
+        {copied ? (
+          <CheckCircle className="w-4 h-4 text-green-400" aria-hidden="true" />
+        ) : (
+          <Copy className="w-4 h-4" aria-hidden="true" />
+        )}
+      </button>
     </div>
   );
 }
