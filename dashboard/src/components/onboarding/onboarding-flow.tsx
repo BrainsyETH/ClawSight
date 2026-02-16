@@ -174,9 +174,21 @@ export function OnboardingFlow({
     }
   };
 
+  const saveGatewayUrl = (base: string) => {
+    localStorage.setItem("clawsight_gateway_url", base);
+    // Persist to DB so wallet is durably linked to this OpenClaw instance
+    fetch("/v1/api/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ openclaw_gateway_url: base }),
+    }).catch(() => {
+      // Best-effort — localStorage is the fallback
+    });
+  };
+
   const confirmGateway = (base: string) => {
     setDetected(true);
-    localStorage.setItem("clawsight_gateway_url", base);
+    saveGatewayUrl(base);
     setTimeout(() => setTrackAStep("name"), 800);
   };
 
@@ -218,7 +230,7 @@ export function OnboardingFlow({
       });
       if (res.ok) {
         setOpenclawDetected(true);
-        localStorage.setItem("clawsight_gateway_url", base);
+        saveGatewayUrl(base);
         setTimeout(() => setTrackBStep("name"), 800);
         return;
       }
@@ -245,7 +257,7 @@ export function OnboardingFlow({
   const confirmOpenclawGateway = () => {
     const base = openclawGatewayUrl.replace(/\/+$/, "");
     setOpenclawDetected(true);
-    localStorage.setItem("clawsight_gateway_url", base);
+    saveGatewayUrl(base);
     setTimeout(() => setTrackBStep("name"), 800);
   };
 

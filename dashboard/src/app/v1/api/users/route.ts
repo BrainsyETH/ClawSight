@@ -55,6 +55,7 @@ export async function PATCH(request: NextRequest) {
     "daily_spend_cap_usdc",
     "monthly_spend_cap_usdc",
     "data_retention_days",
+    "openclaw_gateway_url",
   ];
 
   const updates: Record<string, unknown> = {};
@@ -131,6 +132,28 @@ export async function PATCH(request: NextRequest) {
       );
     }
     updates.data_retention_days = days;
+  }
+
+  // Validate openclaw_gateway_url
+  if (updates.openclaw_gateway_url !== undefined) {
+    if (updates.openclaw_gateway_url !== null) {
+      const raw = String(updates.openclaw_gateway_url).replace(/\/+$/, "");
+      try {
+        const parsed = new URL(raw);
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          return NextResponse.json(
+            { error: "openclaw_gateway_url must use http or https" },
+            { status: 400 }
+          );
+        }
+        updates.openclaw_gateway_url = parsed.origin + parsed.pathname;
+      } catch {
+        return NextResponse.json(
+          { error: "openclaw_gateway_url must be a valid URL" },
+          { status: 400 }
+        );
+      }
+    }
   }
 
   const { data, error } = await supabase
