@@ -28,16 +28,35 @@ export async function createServerSupabaseClient() {
 
 /**
  * Extract wallet address from the authenticated session.
- * Returns null if not authenticated.
+ *
+ * The custom SIWE JWT embeds wallet_address at the top level of the
+ * token payload (for RLS policies) AND in user_metadata / app_metadata.
+ * We read from the session JWT directly so we don't require a round-trip
+ * to Supabase's auth server.
  */
 export async function getAuthenticatedWallet(): Promise<string | null> {
   const supabase = await createServerSupabaseClient();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  if (!user) return null;
+  if (!session) return null;
 
-  // wallet_address is stored in user metadata during SIWE auth
-  return (user.user_metadata?.wallet_address as string) || null;
+  // Decode the JWT payload without verification (Supabase already verified it)
+  const [, payloadB64] = session.access_token.split(".");
+  if (!payloadB64) return null;
+
+  try {
+    const payload = JSON.parse(
+      Buffer.from(payloadB64, "base64url").toString()
+    );
+    return (
+      payload.wallet_address ??
+      payload.user_metadata?.wallet_address ??
+      payload.app_metadata?.wallet_address ??
+      null
+    );
+  } catch {
+    return null;
+  }
 }

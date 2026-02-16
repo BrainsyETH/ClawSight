@@ -55,6 +55,12 @@ export async function PATCH(request: NextRequest) {
     "daily_spend_cap_usdc",
     "monthly_spend_cap_usdc",
     "data_retention_days",
+    "openclaw_gateway_url",
+    "onboarding_completed",
+    "sync_activity",
+    "sync_wallet",
+    "sync_status",
+    "sync_configs",
   ];
 
   const updates: Record<string, unknown> = {};
@@ -131,6 +137,48 @@ export async function PATCH(request: NextRequest) {
       );
     }
     updates.data_retention_days = days;
+  }
+
+  // Validate openclaw_gateway_url
+  if (updates.openclaw_gateway_url !== undefined) {
+    if (updates.openclaw_gateway_url !== null) {
+      const raw = String(updates.openclaw_gateway_url).replace(/\/+$/, "");
+      try {
+        const parsed = new URL(raw);
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          return NextResponse.json(
+            { error: "openclaw_gateway_url must use http or https" },
+            { status: 400 }
+          );
+        }
+        updates.openclaw_gateway_url = parsed.origin + parsed.pathname;
+      } catch {
+        return NextResponse.json(
+          { error: "openclaw_gateway_url must be a valid URL" },
+          { status: 400 }
+        );
+      }
+    }
+  }
+
+  // Validate onboarding_completed (must be boolean)
+  if (updates.onboarding_completed !== undefined) {
+    if (typeof updates.onboarding_completed !== "boolean") {
+      return NextResponse.json(
+        { error: "onboarding_completed must be a boolean" },
+        { status: 400 }
+      );
+    }
+  }
+
+  // Validate sync preference booleans
+  for (const syncField of ["sync_activity", "sync_wallet", "sync_status", "sync_configs"]) {
+    if (updates[syncField] !== undefined && typeof updates[syncField] !== "boolean") {
+      return NextResponse.json(
+        { error: `${syncField} must be a boolean` },
+        { status: 400 }
+      );
+    }
   }
 
   const { data, error } = await supabase

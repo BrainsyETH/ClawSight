@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { useMode } from "@/hooks/use-mode";
 import { useSkillConfigs } from "@/hooks/use-supabase-data";
 import { useEncryption } from "@/hooks/use-encryption";
 import { getSkillForm, getDefaultConfig } from "@/lib/skill-forms";
@@ -19,7 +18,6 @@ export default function SkillConfigPage() {
   const params = useParams();
   const router = useRouter();
   const { walletAddress, signMessage } = useAuth();
-  const { label } = useMode();
   const { configs, loading, saveConfig } = useSkillConfigs(walletAddress ?? undefined);
   const { ready: encryptionReady, initEncryption, encryptConfig, decryptConfig } = useEncryption();
   const slug = params.slug as string;
@@ -123,10 +121,7 @@ export default function SkillConfigPage() {
           </Button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">
-              {label(
-                `Configure ${form?.name || slug}`,
-                `${form?.name || slug} Configuration`
-              )}
+              {form?.name || slug} Configuration
             </h1>
             <div className="flex items-center gap-2 mt-1">
               <SyncBadge status={syncStatus} />

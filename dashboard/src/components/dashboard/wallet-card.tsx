@@ -1,9 +1,9 @@
 "use client";
 
-import { useMode } from "@/hooks/use-mode";
+import { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { formatUSDC } from "@/lib/utils";
-import { Wallet, TrendingDown } from "lucide-react";
+import { Wallet, TrendingDown, Copy, CheckCircle, ExternalLink } from "lucide-react";
 
 interface WalletCardProps {
   balance: number;
@@ -16,14 +16,30 @@ export function WalletCard({
   todaySpending,
   weekSpending,
 }: WalletCardProps) {
-  const { isFun, label } = useMode();
+  const [agentAddress, setAgentAddress] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setAgentAddress(localStorage.getItem("clawsight_agent_wallet_address"));
+  }, []);
+
+  const handleCopy = async () => {
+    if (!agentAddress) return;
+    await navigator.clipboard.writeText(agentAddress);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const truncated = agentAddress
+    ? `${agentAddress.slice(0, 6)}...${agentAddress.slice(-4)}`
+    : null;
 
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <Wallet className="w-4 h-4" />
-          {label("My Wallet", "Wallet")}
+          Wallet
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -40,10 +56,49 @@ export function WalletCard({
             Week: {formatUSDC(weekSpending)}
           </div>
         </div>
-        {isFun && balance < 1 && (
-          <p className="text-xs text-yellow-600 mt-2">
-            Running a bit low! Consider topping up my wallet.
-          </p>
+
+        {/* Agent wallet address (for Track B email users) */}
+        {agentAddress && (
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-xs text-gray-400">Agent:</span>
+                <code className="text-xs font-mono text-gray-600 truncate">
+                  {truncated}
+                </code>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="text-gray-400 hover:text-gray-600 p-1"
+                  aria-label="Copy agent wallet address"
+                >
+                  {copied ? (
+                    <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    window.open(
+                      `https://basescan.org/address/${agentAddress}`,
+                      "_blank"
+                    )
+                  }
+                  className="text-gray-400 hover:text-gray-600 p-1"
+                  aria-label="View on BaseScan"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1">
+              Fund with USDC on Base to enable paid skills
+            </p>
+          </div>
         )}
       </CardContent>
     </Card>

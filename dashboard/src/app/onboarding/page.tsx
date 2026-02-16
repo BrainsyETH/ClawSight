@@ -2,39 +2,45 @@
 
 import { useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
-import { ModeProvider } from "@/hooks/use-mode";
+import { useUser, useSkillConfigs } from "@/hooks/use-supabase-data";
 import { OnboardingFlow } from "@/components/onboarding/onboarding-flow";
-import { createClient } from "@/lib/supabase";
-import { DisplayMode } from "@/types";
+import { getDefaultConfig } from "@/lib/skill-forms";
 
 function OnboardingInner() {
   const router = useRouter();
   const { walletAddress } = useAuth();
+  const { updateUser } = useUser(walletAddress ?? undefined);
+  const { saveConfig } = useSkillConfigs(walletAddress ?? undefined);
 
-  const handleComplete = async (mode: DisplayMode) => {
-    // Save mode preference to Supabase
-    if (walletAddress) {
-      const supabase = createClient();
-      await supabase
-        .from("users")
-        .update({ display_mode: mode })
-        .eq("wallet_address", walletAddress);
-    }
-
-    localStorage.setItem("clawsight_mode", mode);
+  const handleComplete = async () => {
+    // Persist to DB (source of truth) and localStorage (fast cache)
+    await updateUser({ onboarding_completed: true });
     localStorage.setItem("clawsight_onboarded", "true");
     router.push("/");
   };
 
-  return <OnboardingFlow onComplete={handleComplete} />;
+  const handleSaveAgentName = async (name: string) => {
+    await updateUser({ agent_name: name });
+  };
+
+  const handleInstallSkill = async (slug: string) => {
+    const defaults = getDefaultConfig(slug) || {};
+    await saveConfig(slug, defaults);
+  };
+
+  return (
+    <OnboardingFlow
+      onComplete={handleComplete}
+      onSaveAgentName={handleSaveAgentName}
+      onInstallSkill={handleInstallSkill}
+    />
+  );
 }
 
 export default function OnboardingPage() {
   return (
     <AuthProvider>
-      <ModeProvider>
-        <OnboardingInner />
-      </ModeProvider>
+      <OnboardingInner />
     </AuthProvider>
   );
 }

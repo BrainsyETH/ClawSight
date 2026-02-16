@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useMode } from "@/hooks/use-mode";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +32,6 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export function MemoryViewer({ memories, onDelete }: MemoryViewerProps) {
-  const { label } = useMode();
   const [search, setSearch] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
@@ -63,7 +61,7 @@ export function MemoryViewer({ memories, onDelete }: MemoryViewerProps) {
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <Brain className="w-4 h-4" />
-          {label("What I Remember", "Memory Store")}
+          Memory Store
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -181,4 +179,3 @@ export function MemoryViewer({ memories, onDelete }: MemoryViewerProps) {
     </Card>
   );
 }
-

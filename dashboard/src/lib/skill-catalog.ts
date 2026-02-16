@@ -3,7 +3,9 @@ import { CURATED_SKILL_SLUGS } from "./skill-forms";
 
 // ============================================================
 // Curated skill catalog for the "Learn New Skills" browser.
-// Featured skills are hand-picked. ClawHub integration deferred.
+// Featured skills are hand-picked. ClawHub skills are fetched
+// via /v1/api/clawhub/skills and merged at the page level.
+// This static list serves as the reliable fallback.
 // ============================================================
 
 export const SKILL_CATALOG: SkillListing[] = [

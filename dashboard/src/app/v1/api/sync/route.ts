@@ -22,6 +22,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Check sync preferences — if activity sync is disabled, reject
+  const { data: user } = await supabase
+    .from("users")
+    .select("sync_activity")
+    .eq("wallet_address", wallet)
+    .single();
+
+  if (user && !user.sync_activity) {
+    return NextResponse.json({
+      message: "Activity sync is disabled in user settings",
+      count: 0,
+    });
+  }
+
   const body = await request.json();
   const { events, idempotency_key } = body;
 

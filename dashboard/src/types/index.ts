@@ -2,10 +2,6 @@
 // Core domain types for ClawSight
 // ============================================================
 
-export type DisplayMode = "fun" | "professional";
-
-export type AvatarStyle = "lobster" | "robot" | "pixel" | "cat" | "custom";
-
 export type AgentStatus = "online" | "thinking" | "idle" | "offline";
 
 export type EventType =
@@ -27,16 +23,44 @@ export type ConfigSource = "clawsight" | "manual" | "preset" | "default";
 
 export interface User {
   wallet_address: string;
-  display_mode: DisplayMode;
   agent_name: string;
-  avatar_style: AvatarStyle;
-  avatar_color: string;
-  custom_avatar_url: string | null;
+  onboarding_completed: boolean;
   daily_spend_cap_usdc: number;
   monthly_spend_cap_usdc: number;
   data_retention_days: number;
+  sync_activity: boolean;
+  sync_wallet: boolean;
+  sync_status: boolean;
+  sync_configs: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentRegistryRow {
+  id: string;
+  wallet_address: string;
+  fly_app_name: string;
+  fly_machine_id: string;
+  region: string;
+  gateway_url: string;
+  status: "starting" | "running" | "stopped" | "failed";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClawHubSkill {
+  slug: string;
+  name: string;
+  description: string;
+  version: string;
+  author: string;
+  downloads: number;
+  category: string;
+  tags: string[];
+  icon?: string;
+  repository?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SkillConfig {
@@ -94,8 +118,6 @@ export interface FormFieldBase {
   description?: string;
   required?: boolean;
   placeholder?: string;
-  // Fun-mode label (first-person agent voice)
-  funLabel?: string;
 }
 
 export interface TextField extends FormFieldBase {
@@ -172,12 +194,13 @@ export interface SkillFormDefinition {
   name: string;
   icon: string;
   description: string;
-  // Fun-mode description (agent voice)
-  funDescription: string;
   category: SkillCategory;
   fields: FormField[];
   defaultConfig: Record<string, unknown>;
 }
+
+// Keep for backwards compat with DB columns that may still exist
+export type DisplayMode = "fun" | "professional";
 
 export type SkillCategory =
   | "search"
