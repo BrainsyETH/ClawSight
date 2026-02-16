@@ -130,6 +130,11 @@ export default function SettingsPage() {
       if (res.ok) {
         setGatewayStatus("ok");
         localStorage.setItem("clawsight_gateway_url", base);
+        fetch("/v1/api/users", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ openclaw_gateway_url: base }),
+        }).catch(() => {});
         return;
       }
       setGatewayStatus("error");
@@ -143,6 +148,11 @@ export default function SettingsPage() {
         if (probe.type === "opaque") {
           setGatewayStatus("cors");
           localStorage.setItem("clawsight_gateway_url", base);
+          fetch("/v1/api/users", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ openclaw_gateway_url: base }),
+          }).catch(() => {});
           return;
         }
       } catch {
@@ -157,6 +167,11 @@ export default function SettingsPage() {
   const handleSaveGateway = () => {
     const base = gatewayUrl.replace(/\/+$/, "");
     localStorage.setItem("clawsight_gateway_url", base);
+    fetch("/v1/api/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ openclaw_gateway_url: base }),
+    }).catch(() => {});
     setGatewayStatus("ok");
     setTimeout(() => setGatewayStatus("idle"), 3000);
   };

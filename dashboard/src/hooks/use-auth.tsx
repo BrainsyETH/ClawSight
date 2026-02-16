@@ -83,24 +83,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const message = siweMessage.prepareMessage();
         const signature = await signMessageAsync({ message });
 
-        // Create Supabase session
-        const supabase = createClient();
-        const { error } = await supabase.auth.signInWithIdToken({
-          provider: "google" as never,
-          token: JSON.stringify({
+        // Verify SIWE server-side and get a signed JWT
+        const res = await fetch("/v1/api/auth/siwe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
             message: siweMessage.toMessage(),
             signature,
-            wallet_address: addr,
           }),
         });
 
-        if (error) {
-          throw new Error(`SIWE authentication failed: ${error.message}`);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(
+            `SIWE authentication failed: ${body.error || res.statusText}`
+          );
         }
 
-        // Create user row
+        const { access_token } = await res.json();
+
+        // Set Supabase session with the server-signed JWT
+        const supabase = createClient();
+        const { error } = await supabase.auth.setSession({
+          access_token,
+          refresh_token: "",
+        });
+
+        if (error) {
+          throw new Error(`Failed to set session: ${error.message}`);
+        }
+
+        // Create user row (wallet_address is the PK)
         await supabase.from("users").upsert(
-          { wallet_address: addr },
+          { wallet_address: addr.toLowerCase() },
           { onConflict: "wallet_address", ignoreDuplicates: true }
         );
 
