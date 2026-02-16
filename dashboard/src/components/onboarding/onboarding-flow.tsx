@@ -102,6 +102,7 @@ export function OnboardingFlow({
 
   // Track B — Smart Wallet connection + agent wallet
   const [connectingSmartWallet, setConnectingSmartWallet] = useState(false);
+  const [smartWalletPhase, setSmartWalletPhase] = useState<"connect" | "sign" | "wallet" | null>(null);
   const [smartWalletError, setSmartWalletError] = useState<string | null>(null);
   const [agentWalletAddress, setAgentWalletAddress] = useState<string | null>(
     null
@@ -201,8 +202,13 @@ export function OnboardingFlow({
   const handleSmartWalletConnect = async () => {
     setSmartWalletError(null);
     setConnectingSmartWallet(true);
+    setSmartWalletPhase("connect");
     try {
+      // Phase 1: Connect wallet (passkey prompt #1)
+      // Phase 2: SIWE sign (passkey prompt #2) — happens inside connectSmartWallet
       await connectSmartWallet();
+      // Phase 3: Create agent wallet
+      setSmartWalletPhase("wallet");
       setCreatingAgentWallet(true);
       const walletRes = await fetch("/v1/api/wallet/create", {
         method: "POST",
@@ -231,6 +237,7 @@ export function OnboardingFlow({
     } finally {
       setConnectingSmartWallet(false);
       setCreatingAgentWallet(false);
+      setSmartWalletPhase(null);
     }
   };
 
@@ -297,12 +304,17 @@ export function OnboardingFlow({
 
   const handleFinishSetup = async () => {
     const trimmed = agentName.trim();
-    if (!trimmed || selectedSkills.size === 0) return;
+    if (!trimmed) return;
     setFinishingSetup(true);
     try {
       await onSaveAgentName(trimmed);
+      // Install selected skills (if any — skill selection is optional)
       for (const slug of selectedSkills) {
-        await onInstallSkill(slug);
+        try {
+          await onInstallSkill(slug);
+        } catch (err) {
+          console.warn("[onboarding] Skill install failed, continuing:", slug, err);
+        }
       }
       onComplete();
     } catch (err) {
@@ -623,9 +635,9 @@ export function OnboardingFlow({
                       className="w-4 h-4 animate-spin"
                       aria-hidden="true"
                     />
-                    {creatingAgentWallet
+                    {smartWalletPhase === "wallet"
                       ? "Creating agent wallet..."
-                      : "Connecting..."}
+                      : "Approve in your wallet..."}
                   </>
                 ) : (
                   <>
@@ -634,6 +646,11 @@ export function OnboardingFlow({
                   </>
                 )}
               </Button>
+              {connectingSmartWallet && smartWalletPhase !== "wallet" && (
+                <p className="text-xs text-gray-400 text-center mt-2">
+                  You&apos;ll be asked to approve twice &mdash; once to connect, once to sign in.
+                </p>
+              )}
 
               <Explainer question="What is a Smart Wallet?">
                 <p className="mb-2">
@@ -882,30 +899,39 @@ export function OnboardingFlow({
                 {/* Provisioning error */}
                 {provisionError && !provisioning && (
                   <div className="animate-slide-in">
-                    <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+                    <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
                       <AlertTriangle
-                        className="w-8 h-8 text-red-500"
+                        className="w-8 h-8 text-amber-500"
                         aria-hidden="true"
                       />
                     </div>
                     <h2 className="text-xl font-semibold mb-2">
-                      Something went wrong
+                      Agent Not Available Yet
                     </h2>
                     <p className="text-sm text-gray-500 mb-4">
                       {provisionError}
                     </p>
-                    <Button
-                      onClick={() => {
-                        provisionStarted.current = false;
-                        setProvisionError(null);
-                        handleProvision();
-                      }}
-                      size="lg"
-                      className="w-full gap-2"
-                    >
-                      <Cloud className="w-4 h-4" aria-hidden="true" />
-                      Try again
-                    </Button>
+                    <div className="space-y-2">
+                      <Button
+                        onClick={() => {
+                          provisionStarted.current = false;
+                          setProvisionError(null);
+                          handleProvision();
+                        }}
+                        size="lg"
+                        className="w-full gap-2"
+                      >
+                        <Cloud className="w-4 h-4" aria-hidden="true" />
+                        Try again
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => setTrackBStep("profile")}
+                        className="text-sm text-gray-400 hover:text-gray-600 mx-auto block"
+                      >
+                        Skip for now &mdash; I&apos;ll set this up later
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -972,11 +998,7 @@ export function OnboardingFlow({
 
               <Button
                 onClick={handleFinishSetup}
-                disabled={
-                  finishingSetup ||
-                  !agentName.trim() ||
-                  selectedSkills.size === 0
-                }
+                disabled={finishingSetup || !agentName.trim()}
                 size="lg"
                 className="w-full gap-2 mt-4"
               >
@@ -988,19 +1010,27 @@ export function OnboardingFlow({
                     />
                     Setting up...
                   </>
-                ) : (
+                ) : selectedSkills.size > 0 ? (
                   <>
                     <Download className="w-4 h-4" aria-hidden="true" />
                     Install {selectedSkills.size} skill
                     {selectedSkills.size !== 1 ? "s" : ""} &amp; finish setup
                   </>
+                ) : (
+                  <>
+                    <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                    Finish setup
+                  </>
                 )}
               </Button>
-              {(!agentName.trim() || selectedSkills.size === 0) && (
+              {!agentName.trim() && (
                 <p className="text-xs text-gray-400 text-center mt-2">
-                  {!agentName.trim()
-                    ? "Enter an agent name to continue"
-                    : "Select at least one skill to continue"}
+                  Enter an agent name to continue
+                </p>
+              )}
+              {agentName.trim() && selectedSkills.size === 0 && (
+                <p className="text-xs text-gray-400 text-center mt-2">
+                  You can install skills later from the Skill Store
                 </p>
               )}
 

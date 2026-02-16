@@ -65,9 +65,18 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // If no Fly API token, fall back to stub mode for development
+  // If no Fly API token, return a clear error — don't fake it
   if (!FLY_API_TOKEN) {
-    return provisionStub(wallet, supabase, request);
+    console.error("[provision] FLY_API_TOKEN not configured");
+    return NextResponse.json(
+      {
+        error:
+          "Cloud agent provisioning is not available yet. " +
+          "You can skip this step and set up your agent later in Settings.",
+        code: "FLY_NOT_CONFIGURED",
+      },
+      { status: 503 }
+    );
   }
 
   const region = selectRegion(request);
@@ -226,47 +235,5 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * Stub provisioning for local development (no FLY_API_TOKEN set).
- * Simulates a delay and returns a placeholder URL, but still persists
- * to the DB so the rest of the app works.
- */
-async function provisionStub(
-  wallet: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
-  request: NextRequest
-) {
-  // Simulate provisioning delay
-  await new Promise((resolve) => setTimeout(resolve, 6000));
-
-  const region = selectRegion(request);
-  const agentId = `agent_${crypto.randomUUID().slice(0, 8)}`;
-  const appName = `openclaw-dev-${agentId}`;
-  const gatewayUrl = `https://${appName}.fly.dev`;
-
-  // Persist stub entry to agent_registry
-  await supabase.from("agent_registry").upsert(
-    {
-      wallet_address: wallet,
-      fly_app_name: appName,
-      fly_machine_id: agentId,
-      region,
-      gateway_url: gatewayUrl,
-      status: "running",
-    },
-    { onConflict: "wallet_address" }
-  );
-
-  // Save to user profile
-  await supabase
-    .from("users")
-    .update({ openclaw_gateway_url: gatewayUrl })
-    .eq("wallet_address", wallet);
-
-  return NextResponse.json({
-    agent_id: agentId,
-    gateway_url: gatewayUrl,
-    region,
-  });
-}
+// provisionStub removed — provisioning now fails explicitly when
+// FLY_API_TOKEN is not configured instead of faking success.
