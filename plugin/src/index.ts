@@ -29,7 +29,14 @@ export async function activate(): Promise<void> {
 
   api = new ApiClient(config.api_endpoint, config.retry);
   queue = new EventQueue(api, config.sync_batch_size, config.offline_queue_max_size);
-  heartbeat = new Heartbeat(api, config.heartbeat_interval_seconds);
+  heartbeat = new Heartbeat(api, config.heartbeat_interval_seconds, (spending) => {
+    console.warn(
+      `[ClawSight] Spending cap exceeded: ${spending.warning}. ` +
+      `Daily: $${spending.daily_spend.toFixed(4)}/$${spending.daily_cap.toFixed(2)}, ` +
+      `Monthly: $${spending.monthly_spend.toFixed(4)}/$${spending.monthly_cap.toFixed(2)}. ` +
+      `Agent operations will be paused until the cap resets or is increased.`
+    );
+  });
   sessionParser = new SessionParser(queue);
   configSync = new ConfigSync(api, config.api_endpoint);
 

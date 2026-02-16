@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, checkRateLimit } from "@/lib/server/auth";
+import { billingGate } from "@/lib/server/x402";
 
 const MAX_BATCH_SIZE = 100;
 const MAX_EVENT_DATA_SIZE = 102_400; // 100KB per event_data
@@ -35,6 +36,12 @@ export async function POST(request: NextRequest) {
       count: 0,
     });
   }
+
+  // Billing: sync costs $0.0005 per batch
+  const billing = await billingGate(supabase, wallet, "sync", {
+    paymentHeader: request.headers.get("X-Payment"),
+  });
+  if (billing) return billing;
 
   const body = await request.json();
   const { events, idempotency_key } = body;

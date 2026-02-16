@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, checkRateLimit } from "@/lib/server/auth";
+import { billingGate } from "@/lib/server/x402";
 
 /**
  * GET /v1/api/export
@@ -17,6 +18,12 @@ export async function GET(request: NextRequest) {
       { status: 429 }
     );
   }
+
+  // Billing: exports cost $0.01
+  const billing = await billingGate(supabase, wallet, "export", {
+    paymentHeader: request.headers.get("X-Payment"),
+  });
+  if (billing) return billing;
 
   // Fetch all user data in parallel
   const [userRes, configsRes, eventsRes, statusRes] = await Promise.all([

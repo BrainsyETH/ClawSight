@@ -242,3 +242,35 @@ export interface DashboardState {
   recentEvents: ActivityEvent[];
   skills: SkillConfig[];
 }
+
+// ============================================================
+// Billing types
+// ============================================================
+
+export type UsageOperation =
+  | "api_call"
+  | "config_write"
+  | "config_read"
+  | "sync"
+  | "heartbeat"
+  | "export"
+  | "compute_minute"
+  | "skill_install"
+  | "x402_payment";
+
+export interface UsageLedgerEntry {
+  id: string;
+  wallet_address: string;
+  operation: UsageOperation;
+  cost_usdc: number;
+  skill_slug: string | null;
+  metadata: Record<string, unknown>;
+  occurred_at: string;
+}
+
+export interface UsageDailySummary {
+  wallet_address: string;
+  day: string;
+  total_cost_usdc: number;
+  api_calls: number;
+}

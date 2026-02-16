@@ -9,6 +9,23 @@ export interface ActivityEventPayload {
 }
 
 /**
+ * Response from the heartbeat endpoint.
+ * Includes compute billing and spending cap status.
+ */
+export interface HeartbeatResponse {
+  message: string;
+  compute_minutes_billed: number;
+  spending: {
+    daily_spend: number;
+    monthly_spend: number;
+    daily_cap: number;
+    monthly_cap: number;
+    cap_exceeded: boolean;
+    warning: string | null;
+  };
+}
+
+/**
  * Wallet signer interface for x402 payments.
  * Implemented by the OpenClaw wallet integration.
  */
@@ -52,8 +69,22 @@ export class ApiClient {
     });
   }
 
-  async heartbeat(status: string, sessionId?: string): Promise<boolean> {
-    return this.post("/v1/api/heartbeat", { status, session_id: sessionId });
+  /**
+   * Send a heartbeat and receive spending/cap status.
+   * The server bills compute_minute usage based on elapsed time since last heartbeat.
+   * Returns spending data so the plugin can proactively pause if caps are approaching.
+   */
+  async heartbeat(status: string, sessionId?: string): Promise<HeartbeatResponse | null> {
+    try {
+      const res = await this.fetchWithRetry("POST", "/v1/api/heartbeat", {
+        status,
+        session_id: sessionId,
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as HeartbeatResponse;
+    } catch {
+      return null;
+    }
   }
 
   async getSkillConfigs(): Promise<Record<string, unknown>[] | null> {
