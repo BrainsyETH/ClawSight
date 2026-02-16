@@ -2,7 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { SiweMessage } from "siwe";
 import { SignJWT } from "jose";
 import { createHash } from "crypto";
+import { createPublicClient, http } from "viem";
+import { base } from "viem/chains";
 import { createAdminSupabaseClient } from "@/lib/server/supabase-admin";
+
+/** Viem public client for on-chain EIP-1271 signature verification (smart wallets). */
+const publicClient = createPublicClient({
+  chain: base,
+  transport: http(),
+});
 
 /**
  * Derive a deterministic UUID from a wallet address so we can
@@ -39,11 +47,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. Verify SIWE signature
+    // 1. Parse the SIWE message and verify signature.
+    //    We use viem's verifyMessage instead of siwe's built-in verify so
+    //    that both EOA wallets (ecrecover) and smart-contract wallets like
+    //    Coinbase Smart Wallet (EIP-1271) are supported.
     const siweMessage = new SiweMessage(message);
-    let verifyResult: Awaited<ReturnType<SiweMessage["verify"]>>;
+    const messageString = siweMessage.prepareMessage();
+
+    let isValid: boolean;
     try {
-      verifyResult = await siweMessage.verify({ signature });
+      isValid = await publicClient.verifyMessage({
+        address: siweMessage.address as `0x${string}`,
+        message: messageString,
+        signature: signature as `0x${string}`,
+      });
     } catch {
       return NextResponse.json(
         { error: "Invalid SIWE signature" },
@@ -51,14 +68,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!verifyResult.success) {
+    if (!isValid) {
       return NextResponse.json(
         { error: "SIWE verification failed" },
         { status: 401 }
       );
     }
 
-    const walletAddress = verifyResult.data.address.toLowerCase();
+    const walletAddress = siweMessage.address.toLowerCase();
     const userId = walletToUserId(walletAddress);
     const email = `${walletAddress}@wallet.clawsight.app`;
 

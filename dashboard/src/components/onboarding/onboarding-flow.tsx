@@ -88,6 +88,7 @@ export function OnboardingFlow({
 
   // Track A — wallet + gateway
   const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [detected, setDetected] = useState(false);
   const [detectError, setDetectError] = useState<"network" | "cors" | false>(
@@ -132,11 +133,14 @@ export function OnboardingFlow({
 
   const handleConnect = async () => {
     setConnecting(true);
+    setConnectError(null);
     try {
       await authConnect();
       setTrackAStep("gateway");
     } catch (err) {
       console.error("[onboarding] Wallet connection failed:", err);
+      const msg = err instanceof Error ? err.message : "Wallet connection failed";
+      setConnectError(msg);
     } finally {
       setConnecting(false);
     }
@@ -501,6 +505,12 @@ export function OnboardingFlow({
                 Sign in with Ethereum to get started. Your wallet is your
                 identity — no passwords needed.
               </p>
+              {connectError && (
+                <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 text-left flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden="true" />
+                  <span>{connectError}</span>
+                </div>
+              )}
               <Button
                 onClick={handleConnect}
                 disabled={connecting}
