@@ -247,7 +247,7 @@ export interface DashboardState {
 // Billing types
 // ============================================================
 
-export type BillingPlanId = "free" | "starter" | "pro" | "team";
+export type BillingPlanId = "free" | "starter" | "pro";
 
 export type SubscriptionStatus = "active" | "past_due" | "canceled" | "trialing";
 

@@ -35,8 +35,7 @@ CREATE TABLE IF NOT EXISTS billing_plans (
 INSERT INTO billing_plans (id, name, description, price_usdc, price_usd_cents, daily_api_calls, monthly_api_calls, max_skills, max_agents, compute_minutes_mo, data_retention_days, has_cloud_agent, has_priority_support, has_custom_skills, sort_order) VALUES
   ('free',    'Free',    'Get started with basic agent monitoring',     0,     0, 100,   3000,  5,  0,     0, 30, false, false, false, 0),
   ('starter', 'Starter', 'For individuals running a personal agent',    5,   500, 1000, 30000, 15,  1,  1440, 90, true,  false, false, 1),
-  ('pro',     'Pro',     'For power users and developers',             20,  2000, 5000,150000, 50,  3, 10080, 365, true,  true,  true,  2),
-  ('team',    'Team',    'For teams managing multiple agents',         50,  5000,20000,500000,999, 10, 43200, 365, true,  true,  true,  3)
+  ('pro',     'Pro',     'For power users and developers',             20,  2000, 5000,150000, 50,  3, 10080, 365, true,  true,  true,  2)
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================
