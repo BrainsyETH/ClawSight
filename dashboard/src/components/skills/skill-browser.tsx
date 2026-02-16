@@ -5,8 +5,6 @@ import { SkillListing, SkillCategory } from "@/types";
 import {
   SKILL_CATALOG,
   CATEGORIES,
-  getFeaturedSkills,
-  searchSkills,
 } from "@/lib/skill-catalog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,13 +13,10 @@ import { Badge } from "@/components/ui/badge";
 import { Search, Download, Star, Check, X, SearchX, Loader2 } from "lucide-react";
 
 interface SkillBrowserProps {
+  catalog?: SkillListing[];
   installedSlugs: string[];
   onInstall: (slug: string) => void;
   installing?: string | null;
-}
-
-function getCategoryCount(category: SkillCategory): number {
-  return SKILL_CATALOG.filter((s) => s.category === category).length;
 }
 
 function formatInstalls(count: number): string {
@@ -33,23 +28,33 @@ function formatInstalls(count: number): string {
 }
 
 export function SkillBrowser({
+  catalog: catalogProp,
   installedSlugs,
   onInstall,
   installing,
 }: SkillBrowserProps) {
+  const skills = catalogProp || SKILL_CATALOG;
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<
     SkillCategory | "all"
   >("all");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const featured = getFeaturedSkills();
+  const featured = skills.filter((s) => s.featured);
+
   const allSkills =
     searchQuery.length > 0
-      ? searchSkills(searchQuery)
+      ? skills.filter((s) => {
+          const q = searchQuery.toLowerCase();
+          return (
+            s.name.toLowerCase().includes(q) ||
+            s.description.toLowerCase().includes(q) ||
+            s.slug.includes(q)
+          );
+        })
       : selectedCategory === "all"
-        ? SKILL_CATALOG
-        : SKILL_CATALOG.filter((s) => s.category === selectedCategory);
+        ? skills
+        : skills.filter((s) => s.category === selectedCategory);
 
   const clearSearch = () => {
     setSearchQuery("");
@@ -100,11 +105,11 @@ export function SkillBrowser({
         >
           All
           <span className="ml-1.5 text-[10px] opacity-70">
-            {SKILL_CATALOG.length}
+            {skills.length}
           </span>
         </Button>
         {CATEGORIES.map((cat) => {
-          const count = getCategoryCount(cat.value);
+          const count = skills.filter((s) => s.category === cat.value).length;
           return (
             <Button
               key={cat.value}

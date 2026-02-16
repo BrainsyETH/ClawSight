@@ -19,6 +19,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Check sync preferences — if status sync is disabled, silently accept
+  const { data: userData } = await supabase
+    .from("users")
+    .select("sync_status")
+    .eq("wallet_address", wallet)
+    .single();
+
+  if (userData && !userData.sync_status) {
+    return NextResponse.json({ message: "ok", synced: false });
+  }
+
   const body = await request.json();
   const { status, session_id } = body;
 

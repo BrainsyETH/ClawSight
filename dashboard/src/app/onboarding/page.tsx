@@ -13,6 +13,8 @@ function OnboardingInner() {
   const { saveConfig } = useSkillConfigs(walletAddress ?? undefined);
 
   const handleComplete = async () => {
+    // Persist to DB (source of truth) and localStorage (fast cache)
+    await updateUser({ onboarding_completed: true });
     localStorage.setItem("clawsight_onboarded", "true");
     router.push("/");
   };

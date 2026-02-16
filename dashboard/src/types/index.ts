@@ -24,11 +24,43 @@ export type ConfigSource = "clawsight" | "manual" | "preset" | "default";
 export interface User {
   wallet_address: string;
   agent_name: string;
+  onboarding_completed: boolean;
   daily_spend_cap_usdc: number;
   monthly_spend_cap_usdc: number;
   data_retention_days: number;
+  sync_activity: boolean;
+  sync_wallet: boolean;
+  sync_status: boolean;
+  sync_configs: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentRegistryRow {
+  id: string;
+  wallet_address: string;
+  fly_app_name: string;
+  fly_machine_id: string;
+  region: string;
+  gateway_url: string;
+  status: "starting" | "running" | "stopped" | "failed";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClawHubSkill {
+  slug: string;
+  name: string;
+  description: string;
+  version: string;
+  author: string;
+  downloads: number;
+  category: string;
+  tags: string[];
+  icon?: string;
+  repository?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SkillConfig {
