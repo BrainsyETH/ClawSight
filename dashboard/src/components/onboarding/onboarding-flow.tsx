@@ -27,6 +27,9 @@ import {
   AlertTriangle,
   Terminal,
   HelpCircle,
+  Monitor,
+  ExternalLink,
+  ChevronRight,
 } from "lucide-react";
 
 // ============================================================
@@ -101,10 +104,8 @@ export function OnboardingFlow({
   const [creatingAgentWallet, setCreatingAgentWallet] = useState(false);
   const [addressCopied, setAddressCopied] = useState(false);
 
-  // Track B — OpenClaw guided setup
-  const [openclawGuideStep, setOpenclawGuideStep] = useState<
-    "intro" | "install" | "connect"
-  >("intro");
+  // Track B — OpenClaw visual setup wizard (slides 0-3)
+  const [wizardSlide, setWizardSlide] = useState(0);
   const [openclawGatewayUrl, setOpenclawGatewayUrl] = useState(
     "http://localhost:3080"
   );
@@ -114,6 +115,10 @@ export function OnboardingFlow({
     "network" | "cors" | false
   >(false);
   const [commandCopied, setCommandCopied] = useState(false);
+  const [detectedOS, setDetectedOS] = useState<"mac" | "windows" | "linux">(
+    "mac"
+  );
+  const WIZARD_TOTAL_SLIDES = 4;
 
   // Shared — name + skills
   const [agentName, setAgentName] = useState("");
@@ -267,13 +272,13 @@ export function OnboardingFlow({
     else setTrackBStep("name");
   };
 
-  // Auto-probe localhost when Track B enters the connect sub-step
+  // Auto-probe localhost when wizard reaches the connect slide (slide 3)
   const openclawAutoProbed = useRef(false);
   useEffect(() => {
     if (
       track === "b" &&
       trackBStep === "openclaw" &&
-      openclawGuideStep === "connect" &&
+      wizardSlide === 3 &&
       !openclawDetected
     ) {
       if (!openclawAutoProbed.current) {
@@ -281,11 +286,21 @@ export function OnboardingFlow({
         handleOpenclawDetect();
       }
     }
-    // Reset the ref when leaving the connect step
-    if (openclawGuideStep !== "connect") {
+    // Reset the ref when leaving the connect slide
+    if (wizardSlide !== 3) {
       openclawAutoProbed.current = false;
     }
-  }, [openclawGuideStep, trackBStep, track]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [wizardSlide, trackBStep, track]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Detect user OS for platform-specific instructions
+  useEffect(() => {
+    if (typeof navigator !== "undefined") {
+      const ua = navigator.userAgent.toLowerCase();
+      if (ua.includes("mac") || ua.includes("darwin")) setDetectedOS("mac");
+      else if (ua.includes("win")) setDetectedOS("windows");
+      else setDetectedOS("linux");
+    }
+  }, []);
 
   // ---- Shared handlers ----
 
@@ -779,40 +794,44 @@ export function OnboardingFlow({
         )}
 
         {/* ================================================
-            TRACK B — STEP 3: GUIDED OPENCLAW SETUP
+            TRACK B — STEP 3: VISUAL OPENCLAW SETUP WIZARD
         ================================================ */}
         {track === "b" && trackBStep === "openclaw" && (
-          <Card>
-            <CardContent className="p-8">
-              {/* ---- Sub-step: Intro ---- */}
-              {openclawGuideStep === "intro" && (
-                <div>
-                  <div className="text-center mb-6">
-                    <div className="w-16 h-16 rounded-2xl bg-red-100 flex items-center justify-center mx-auto mb-4">
-                      <Zap className="w-8 h-8 text-red-500" aria-hidden="true" />
-                    </div>
-                    <h2 className="text-xl font-semibold mb-2">
-                      Connect Your AI Agent
+          <Card className="overflow-hidden">
+            <CardContent className="p-0">
+              {/* ---- Slide 0: How It Works (Architecture) ---- */}
+              {wizardSlide === 0 && !openclawDetected && (
+                <div key="slide-0" className="animate-slide-in p-8">
+                  <div className="text-center mb-2">
+                    <p className="text-xs font-medium text-red-500 uppercase tracking-wider mb-3">
+                      How it works
+                    </p>
+                    <h2 className="text-xl font-semibold mb-1">
+                      Meet Your AI Agent
                     </h2>
-                    <p className="text-gray-500">
-                      One last thing &mdash; your AI agent needs a home.
+                    <p className="text-sm text-gray-500">
+                      Two pieces that work together
                     </p>
                   </div>
 
-                  <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 mb-6">
+                  {/* Architecture Diagram */}
+                  <ArchitectureDiagram />
+
+                  {/* Key insight callout */}
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl mb-6">
                     <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center shrink-0 text-sm">
-                        &#x1F9E0;
+                      <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+                        <HelpCircle className="w-4 h-4 text-blue-600" aria-hidden="true" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-900">Think of it like this</p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          <strong>OpenClaw</strong> = your AI agent (the brain)<br />
-                          <strong>ClawSight</strong> = this dashboard (the remote control)
+                        <p className="text-sm font-medium text-blue-900">
+                          Why two parts?
                         </p>
-                        <p className="text-xs text-gray-400 mt-2">
-                          OpenClaw runs on your computer. ClawSight lets you
-                          monitor it, pick skills, and set spending limits.
+                        <p className="text-xs text-blue-700 mt-1 leading-relaxed">
+                          Your agent runs on <strong>your machine</strong> for
+                          privacy and control. This dashboard is just a window
+                          into what it&apos;s doing &mdash; like a TV remote for
+                          your AI.
                         </p>
                       </div>
                     </div>
@@ -820,217 +839,377 @@ export function OnboardingFlow({
 
                   <div className="space-y-3">
                     <Button
-                      onClick={() => setOpenclawGuideStep("install")}
+                      onClick={() => setWizardSlide(1)}
                       size="lg"
                       className="w-full gap-2"
                     >
-                      Set up OpenClaw
+                      Got it, let&apos;s set it up
                       <ArrowRight className="w-4 h-4" aria-hidden="true" />
                     </Button>
                     <Button
                       variant="outline"
-                      onClick={() => setOpenclawGuideStep("connect")}
+                      onClick={() => {
+                        openclawAutoProbed.current = false;
+                        setWizardSlide(3);
+                      }}
                       size="lg"
-                      className="w-full gap-2"
+                      className="w-full"
                     >
                       I already have OpenClaw running
                     </Button>
                     <button
                       type="button"
                       onClick={handleSkipGateway}
-                      className="text-sm text-gray-400 hover:text-gray-600 mx-auto block mt-2"
+                      className="text-sm text-gray-400 hover:text-gray-600 mx-auto block mt-1"
                     >
                       I&apos;ll set this up later
                     </button>
                   </div>
+
+                  <SlideIndicator
+                    total={WIZARD_TOTAL_SLIDES}
+                    current={0}
+                    onChange={(i) => setWizardSlide(i)}
+                  />
                 </div>
               )}
 
-              {/* ---- Sub-step: Install ---- */}
-              {openclawGuideStep === "install" && (
-                <div>
+              {/* ---- Slide 1: What You'll Need (Requirements) ---- */}
+              {wizardSlide === 1 && !openclawDetected && (
+                <div key="slide-1" className="animate-slide-in p-8">
                   <div className="text-center mb-6">
-                    <Download
-                      className="w-12 h-12 text-red-500 mx-auto mb-4"
-                      aria-hidden="true"
-                    />
-                    <h2 className="text-xl font-semibold mb-2">
-                      Install OpenClaw
+                    <p className="text-xs font-medium text-red-500 uppercase tracking-wider mb-3">
+                      Before we start
+                    </p>
+                    <h2 className="text-xl font-semibold mb-1">
+                      Quick Pre-Flight Check
                     </h2>
-                    <p className="text-gray-500">
-                      Three quick steps and your agent is running.
+                    <p className="text-sm text-gray-500">
+                      This takes about 5 minutes
                     </p>
                   </div>
 
-                  <div className="space-y-4">
-                    {/* Step 1 */}
-                    <div className="p-4 rounded-lg border border-gray-200">
-                      <div className="flex items-start gap-3">
-                        <div className="w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center text-sm font-bold shrink-0">
-                          1
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            Open a terminal
-                          </p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            <strong>Mac:</strong> Spotlight &rarr; type &quot;Terminal&quot;<br />
-                            <strong>Windows:</strong> search &quot;PowerShell&quot;<br />
-                            <strong>Linux:</strong> Ctrl+Alt+T
-                          </p>
-                        </div>
+                  <div className="space-y-3 stagger-children mb-6">
+                    {/* OS — auto-detected */}
+                    <div className="flex items-center gap-3 p-3.5 rounded-xl bg-green-50 border border-green-200">
+                      <div className="w-9 h-9 rounded-lg bg-green-100 flex items-center justify-center shrink-0">
+                        <CheckCircle className="w-5 h-5 text-green-600" aria-hidden="true" />
                       </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900">
+                          A computer
+                        </p>
+                        <p className="text-xs text-green-700">
+                          You&apos;re on{" "}
+                          {detectedOS === "mac"
+                            ? "macOS"
+                            : detectedOS === "windows"
+                              ? "Windows"
+                              : "Linux"}{" "}
+                          &mdash; perfect!
+                        </p>
+                      </div>
+                      <Badge variant="success" className="text-[10px]">
+                        Detected
+                      </Badge>
                     </div>
 
-                    {/* Step 2 */}
-                    <div className="p-4 rounded-lg border border-gray-200">
-                      <div className="flex items-start gap-3">
-                        <div className="w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center text-sm font-bold shrink-0">
-                          2
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 mb-2">
-                            Paste this command and press Enter
-                          </p>
-                          <CopyCommand
-                            command="npx openclaw@latest init && npx openclaw start"
-                            copied={commandCopied}
-                            onCopy={() => {
-                              navigator.clipboard.writeText(
-                                "npx openclaw@latest init && npx openclaw start"
-                              );
-                              setCommandCopied(true);
-                              setTimeout(() => setCommandCopied(false), 2000);
-                            }}
-                          />
-                          <p className="text-xs text-gray-400 mt-2">
-                            This downloads and starts OpenClaw. It may take a minute.
-                          </p>
-                        </div>
+                    {/* Node.js */}
+                    <div className="flex items-center gap-3 p-3.5 rounded-xl border border-gray-200">
+                      <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                        <Download className="w-5 h-5 text-gray-500" aria-hidden="true" />
                       </div>
-                    </div>
-
-                    {/* Step 3 */}
-                    <div className="p-4 rounded-lg border border-gray-200">
-                      <div className="flex items-start gap-3">
-                        <div className="w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center text-sm font-bold shrink-0">
-                          3
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">
-                            Wait for &quot;Ready&quot; in the terminal
-                          </p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            You&apos;ll see something like{" "}
-                            <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-[11px]">
-                              OpenClaw ready on port 3080
-                            </span>
-                          </p>
-                        </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900">
+                          Node.js
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Free runtime &mdash; needed to run OpenClaw
+                        </p>
                       </div>
-                    </div>
-
-                    <Button
-                      onClick={() => {
-                        openclawAutoProbed.current = false;
-                        setOpenclawGuideStep("connect");
-                      }}
-                      size="lg"
-                      className="w-full gap-2"
-                    >
-                      I see &quot;Ready&quot; &mdash; connect now
-                      <ArrowRight className="w-4 h-4" aria-hidden="true" />
-                    </Button>
-
-                    <Explainer question="What does this command do?">
-                      <p className="mb-2">
-                        <code className="bg-blue-100 px-1 rounded">npx</code> is a tool
-                        that comes with Node.js. It downloads and runs OpenClaw without
-                        permanently installing anything.
-                      </p>
-                      <p className="mb-2">
-                        <code className="bg-blue-100 px-1 rounded">init</code> creates a
-                        config file. <code className="bg-blue-100 px-1 rounded">start</code>{" "}
-                        launches your AI agent.
-                      </p>
-                      <p>
-                        Everything runs locally on your machine. Nothing is sent to
-                        external servers unless you enable specific skills.
-                      </p>
-                    </Explainer>
-
-                    <Explainer question="Don't have Node.js installed?">
-                      <p className="mb-2">
-                        Node.js is a free tool needed to run OpenClaw. To install it:
-                      </p>
-                      <ol className="list-decimal list-inside space-y-1 mb-2">
-                        <li>
-                          Visit <strong>nodejs.org</strong> and download the LTS version
-                        </li>
-                        <li>Run the installer (just click Next through the steps)</li>
-                        <li>Close and re-open your terminal</li>
-                        <li>Then paste the command from Step 2 above</li>
-                      </ol>
-                    </Explainer>
-
-                    <div className="flex justify-between items-center">
-                      <button
-                        type="button"
-                        onClick={() => setOpenclawGuideStep("intro")}
-                        className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1"
+                      <a
+                        href="https://nodejs.org"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-medium text-red-500 hover:text-red-600 flex items-center gap-1 shrink-0"
                       >
-                        <ArrowLeft className="w-3 h-3" />
-                        Back
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSkipGateway}
-                        className="text-sm text-gray-400 hover:text-gray-600"
-                      >
-                        Skip for now
-                      </button>
+                        Get it
+                        <ExternalLink className="w-3 h-3" aria-hidden="true" />
+                      </a>
+                    </div>
+
+                    {/* Terminal */}
+                    <div className="flex items-center gap-3 p-3.5 rounded-xl bg-green-50 border border-green-200">
+                      <div className="w-9 h-9 rounded-lg bg-green-100 flex items-center justify-center shrink-0">
+                        <CheckCircle className="w-5 h-5 text-green-600" aria-hidden="true" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900">
+                          A terminal app
+                        </p>
+                        <p className="text-xs text-green-700">
+                          {detectedOS === "mac"
+                            ? "Use Spotlight \u2192 type \"Terminal\""
+                            : detectedOS === "windows"
+                              ? "Search for \"PowerShell\" in Start"
+                              : "Press Ctrl+Alt+T"}
+                        </p>
+                      </div>
+                      <Badge variant="success" className="text-[10px]">
+                        Built in
+                      </Badge>
                     </div>
                   </div>
+
+                  <Explainer question="Already have Node.js? How to check">
+                    <p className="mb-2">
+                      Open your terminal and type{" "}
+                      <code className="bg-blue-100 px-1 rounded">
+                        node --version
+                      </code>{" "}
+                      then press Enter.
+                    </p>
+                    <p>
+                      If you see a version number (like <code className="bg-blue-100 px-1 rounded">v20.11.0</code>),
+                      you&apos;re good! If you see &quot;command not found&quot;, click the &quot;Get it&quot;
+                      link above to install it.
+                    </p>
+                  </Explainer>
+
+                  <Button
+                    onClick={() => setWizardSlide(2)}
+                    size="lg"
+                    className="w-full gap-2 mt-4"
+                  >
+                    I&apos;m ready
+                    <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                  </Button>
+
+                  <div className="flex justify-between items-center mt-4">
+                    <button
+                      type="button"
+                      onClick={() => setWizardSlide(0)}
+                      className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1"
+                    >
+                      <ArrowLeft className="w-3 h-3" />
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSkipGateway}
+                      className="text-sm text-gray-400 hover:text-gray-600"
+                    >
+                      Skip for now
+                    </button>
+                  </div>
+
+                  <SlideIndicator
+                    total={WIZARD_TOTAL_SLIDES}
+                    current={1}
+                    onChange={(i) => setWizardSlide(i)}
+                  />
                 </div>
               )}
 
-              {/* ---- Sub-step: Connect (auto-probes on enter) ---- */}
-              {openclawGuideStep === "connect" && !openclawDetected && (
-                <div>
+              {/* ---- Slide 2: Install & Start (Terminal Mockup) ---- */}
+              {wizardSlide === 2 && !openclawDetected && (
+                <div key="slide-2" className="animate-slide-in p-8">
                   <div className="text-center mb-6">
-                    <Search
-                      className="w-12 h-12 text-red-500 mx-auto mb-4"
-                      aria-hidden="true"
+                    <p className="text-xs font-medium text-red-500 uppercase tracking-wider mb-3">
+                      Install &amp; start
+                    </p>
+                    <h2 className="text-xl font-semibold mb-1">
+                      One Command, That&apos;s It
+                    </h2>
+                    <p className="text-sm text-gray-500">
+                      Copy this into your terminal and press Enter
+                    </p>
+                  </div>
+
+                  {/* Copy command */}
+                  <CopyCommand
+                    command="npx openclaw@latest init && npx openclaw start"
+                    copied={commandCopied}
+                    onCopy={() => {
+                      navigator.clipboard.writeText(
+                        "npx openclaw@latest init && npx openclaw start"
+                      );
+                      setCommandCopied(true);
+                      setTimeout(() => setCommandCopied(false), 2000);
+                    }}
+                  />
+
+                  {/* What you'll see - terminal mockup */}
+                  <div className="mt-5 mb-2">
+                    <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1.5">
+                      <Monitor className="w-3.5 h-3.5" aria-hidden="true" />
+                      What you&apos;ll see in your terminal
+                    </p>
+                    <TerminalMockup
+                      title={
+                        detectedOS === "mac"
+                          ? "Terminal"
+                          : detectedOS === "windows"
+                            ? "PowerShell"
+                            : "Terminal"
+                      }
+                      lines={[
+                        {
+                          text: "$ npx openclaw@latest init && npx openclaw start",
+                          color: "text-gray-400",
+                        },
+                        { text: "" },
+                        {
+                          text: "\u2713 Downloading OpenClaw...",
+                          color: "text-green-400",
+                        },
+                        {
+                          text: "\u2713 Creating configuration...",
+                          color: "text-green-400",
+                        },
+                        {
+                          text: "\u2713 Starting agent...",
+                          color: "text-green-400",
+                        },
+                        { text: "" },
+                        {
+                          text: "\uD83E\uDD9E OpenClaw ready on port 3080",
+                          color: "text-green-300 font-bold",
+                        },
+                      ]}
                     />
-                    <h2 className="text-xl font-semibold mb-2">
+                  </div>
+
+                  {/* Callout */}
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg mb-5 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" aria-hidden="true" />
+                    <p className="text-xs text-amber-800">
+                      <strong>Wait for the last line.</strong> When you see
+                      &quot;Ready on port 3080&quot;, your agent is running.
+                      Click Next below.
+                    </p>
+                  </div>
+
+                  <Explainer question="What does this command do?">
+                    <p className="mb-2">
+                      <code className="bg-blue-100 px-1 rounded">npx</code>{" "}
+                      downloads and runs OpenClaw without permanently installing
+                      anything. It&apos;s safe and official.
+                    </p>
+                    <p>
+                      Everything stays on your machine. Nothing is sent
+                      externally unless you enable specific skills later.
+                    </p>
+                  </Explainer>
+
+                  <Explainer question="Getting an error?">
+                    <p className="mb-2">
+                      <strong>&quot;command not found: npx&quot;</strong> &mdash; You need
+                      to install Node.js first.{" "}
+                      <a
+                        href="https://nodejs.org"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline"
+                      >
+                        Download it here
+                      </a>
+                      , then close and re-open your terminal.
+                    </p>
+                    <p>
+                      <strong>Permission denied</strong> &mdash; Try adding{" "}
+                      <code className="bg-blue-100 px-1 rounded">sudo</code> before the
+                      command (Mac/Linux), or run PowerShell as Administrator (Windows).
+                    </p>
+                  </Explainer>
+
+                  <Button
+                    onClick={() => {
+                      openclawAutoProbed.current = false;
+                      setWizardSlide(3);
+                    }}
+                    size="lg"
+                    className="w-full gap-2 mt-4"
+                  >
+                    I see &quot;Ready&quot; &mdash; connect now
+                    <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                  </Button>
+
+                  <div className="flex justify-between items-center mt-4">
+                    <button
+                      type="button"
+                      onClick={() => setWizardSlide(1)}
+                      className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1"
+                    >
+                      <ArrowLeft className="w-3 h-3" />
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSkipGateway}
+                      className="text-sm text-gray-400 hover:text-gray-600"
+                    >
+                      Skip for now
+                    </button>
+                  </div>
+
+                  <SlideIndicator
+                    total={WIZARD_TOTAL_SLIDES}
+                    current={2}
+                    onChange={(i) => setWizardSlide(i)}
+                  />
+                </div>
+              )}
+
+              {/* ---- Slide 3: Connect (auto-probes) ---- */}
+              {wizardSlide === 3 && !openclawDetected && (
+                <div key="slide-3" className="animate-slide-in p-8">
+                  <div className="text-center mb-6">
+                    <p className="text-xs font-medium text-red-500 uppercase tracking-wider mb-3">
+                      Almost done
+                    </p>
+                    <h2 className="text-xl font-semibold mb-1">
                       Connecting to Your Agent
                     </h2>
-                    <p className="text-gray-500">
+                    <p className="text-sm text-gray-500">
                       {openclawDetecting
-                        ? "Looking for OpenClaw on your machine..."
-                        : "Let\u2019s find your running OpenClaw instance."}
+                        ? "Searching for OpenClaw on your machine..."
+                        : "Let\u2019s find your running agent."}
                     </p>
                   </div>
 
+                  {/* Connection animation */}
                   {openclawDetecting && (
-                    <div className="flex flex-col items-center gap-3 mb-6">
-                      <Loader2 className="w-8 h-8 animate-spin text-red-500" aria-hidden="true" />
-                      <p className="text-sm text-gray-500">
+                    <div className="flex flex-col items-center gap-4 py-6 mb-4">
+                      <div className="relative">
+                        <div className="w-20 h-20 rounded-2xl bg-red-50 border-2 border-red-200 flex items-center justify-center animate-pulse-glow">
+                          <Search className="w-8 h-8 text-red-500" aria-hidden="true" />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
                         Checking {openclawGatewayUrl}...
-                      </p>
+                      </div>
                     </div>
                   )}
 
+                  {/* Error state */}
                   {openclawError && !openclawDetecting && (
-                    <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                      <p className="text-sm font-medium text-amber-800 mb-2">
-                        Not detected yet
-                      </p>
-                      <p className="text-sm text-amber-700 mb-3">
-                        Make sure OpenClaw is running and showing &quot;Ready&quot;
-                        in your terminal.
-                      </p>
-                      <div className="space-y-3">
+                    <div className="mb-4">
+                      <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                        <div className="flex items-start gap-3 mb-3">
+                          <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" aria-hidden="true" />
+                          <div>
+                            <p className="text-sm font-medium text-amber-800">
+                              Not found yet
+                            </p>
+                            <p className="text-xs text-amber-700 mt-1">
+                              Make sure your terminal shows &quot;Ready on port 3080&quot;
+                              before retrying.
+                            </p>
+                          </div>
+                        </div>
+
                         <Button
                           onClick={() => {
                             openclawAutoProbed.current = false;
@@ -1039,21 +1218,26 @@ export function OnboardingFlow({
                           }}
                           disabled={openclawDetecting}
                           size="sm"
-                          className="w-full gap-2"
+                          className="w-full gap-2 mb-3"
                         >
                           <RefreshCw className="w-3 h-3" aria-hidden="true" />
                           Try again
                         </Button>
 
-                        <details className="text-left">
-                          <summary className="text-xs font-medium text-gray-500 cursor-pointer flex items-center gap-1.5">
-                            <HelpCircle className="w-3.5 h-3.5" />
-                            Running OpenClaw on a different address?
-                          </summary>
-                          <div className="mt-2 space-y-2">
+                        <Explainer question="Running on a different address?">
+                          <div className="space-y-2">
+                            <p className="mb-2">
+                              By default, OpenClaw runs at{" "}
+                              <code className="bg-blue-100 px-1 rounded">
+                                http://localhost:3080
+                              </code>
+                              . If you changed this, enter your custom URL below.
+                            </p>
                             <Input
                               value={openclawGatewayUrl}
-                              onChange={(e) => setOpenclawGatewayUrl(e.target.value)}
+                              onChange={(e) =>
+                                setOpenclawGatewayUrl(e.target.value)
+                              }
                               placeholder="http://your-server:3080"
                               className="font-mono text-sm"
                             />
@@ -1066,17 +1250,18 @@ export function OnboardingFlow({
                               }}
                               disabled={openclawDetecting}
                               size="sm"
-                              className="w-full gap-2"
+                              className="w-full gap-1.5"
                             >
                               <Search className="w-3 h-3" aria-hidden="true" />
                               Connect to this address
                             </Button>
                           </div>
-                        </details>
+                        </Explainer>
                       </div>
                     </div>
                   )}
 
+                  {/* Idle state (shouldn't show often due to auto-probe) */}
                   {!openclawDetecting && !openclawError && (
                     <Button
                       onClick={handleOpenclawDetect}
@@ -1093,7 +1278,7 @@ export function OnboardingFlow({
                     <button
                       type="button"
                       onClick={() => {
-                        setOpenclawGuideStep("install");
+                        setWizardSlide(2);
                         setOpenclawError(false);
                       }}
                       className="text-sm text-gray-400 hover:text-gray-600 flex items-center gap-1"
@@ -1109,20 +1294,26 @@ export function OnboardingFlow({
                       Skip for now
                     </button>
                   </div>
+
+                  <SlideIndicator
+                    total={WIZARD_TOTAL_SLIDES}
+                    current={3}
+                    onChange={(i) => setWizardSlide(i)}
+                  />
                 </div>
               )}
 
-              {/* ---- Success state ---- */}
+              {/* ---- Success state (auto-advance) ---- */}
               {openclawDetected && (
-                <div className="text-center">
-                  <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle className="w-8 h-8 text-green-600" aria-hidden="true" />
+                <div key="slide-success" className="animate-slide-in p-8 text-center">
+                  <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle className="w-10 h-10 text-green-600" aria-hidden="true" />
                   </div>
                   <h2 className="text-xl font-semibold mb-2">
                     Agent Connected!
                   </h2>
                   <p className="text-gray-500 mb-2">
-                    Your OpenClaw agent is running and linked to this dashboard.
+                    Your OpenClaw agent is live and linked to this dashboard.
                   </p>
                   <p className="text-xs text-gray-400 font-mono">
                     {openclawGatewayUrl}
@@ -1408,6 +1599,128 @@ function GatewayStep({
 }
 
 // ============================================================
+// Architecture diagram (inline visual)
+// ============================================================
+
+function ArchitectureDiagram() {
+  return (
+    <div className="flex items-center justify-center gap-3 py-6 mb-4">
+      {/* Your Computer */}
+      <div className="flex flex-col items-center gap-1.5">
+        <div className="w-[88px] h-[88px] rounded-2xl bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200 flex flex-col items-center justify-center shadow-sm">
+          <Terminal className="w-7 h-7 text-red-500" aria-hidden="true" />
+          <span className="text-[10px] font-bold text-red-600 mt-1">
+            OpenClaw
+          </span>
+        </div>
+        <span className="text-[10px] text-gray-400 font-medium">
+          Your computer
+        </span>
+      </div>
+
+      {/* Connection */}
+      <div className="flex flex-col items-center gap-1 px-1">
+        <div className="relative w-12 flex items-center">
+          <div className="w-full h-[2px] bg-gradient-to-r from-red-300 to-blue-300" />
+          <div className="absolute -right-0.5 w-0 h-0 border-l-[5px] border-l-blue-300 border-y-[3px] border-y-transparent" />
+        </div>
+        <span className="text-[8px] text-gray-400 whitespace-nowrap">
+          talks to
+        </span>
+      </div>
+
+      {/* This Dashboard */}
+      <div className="flex flex-col items-center gap-1.5 relative">
+        <div className="w-[88px] h-[88px] rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 flex flex-col items-center justify-center shadow-sm">
+          <Monitor className="w-7 h-7 text-blue-500" aria-hidden="true" />
+          <span className="text-[10px] font-bold text-blue-600 mt-1">
+            ClawSight
+          </span>
+        </div>
+        {/* "You are here" badge */}
+        <div className="absolute -top-1.5 -right-1.5 bg-green-500 text-white text-[7px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
+          YOU
+        </div>
+        <span className="text-[10px] text-gray-400 font-medium">
+          This dashboard
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Terminal mockup (visual representation)
+// ============================================================
+
+function TerminalMockup({
+  lines,
+  title,
+}: {
+  lines: { text: string; color?: string }[];
+  title?: string;
+}) {
+  return (
+    <div className="rounded-xl overflow-hidden border border-gray-700 bg-gray-900 shadow-lg">
+      {/* Title bar with traffic lights */}
+      <div className="flex items-center gap-1.5 px-3 py-2 bg-gray-800 border-b border-gray-700">
+        <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
+        <div className="w-2.5 h-2.5 rounded-full bg-yellow-400" />
+        <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
+        {title && (
+          <span className="text-[10px] text-gray-500 ml-2 font-mono">
+            {title}
+          </span>
+        )}
+      </div>
+      {/* Content */}
+      <div className="p-3 font-mono text-[11px] leading-relaxed space-y-0.5">
+        {lines.map((line, i) => (
+          <div key={i} className={line.color || "text-gray-300"}>
+            {line.text || "\u00A0"}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// Slide indicator dots
+// ============================================================
+
+function SlideIndicator({
+  total,
+  current,
+  onChange,
+}: {
+  total: number;
+  current: number;
+  onChange: (i: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-2 mt-6">
+      {Array.from({ length: total }, (_, i) => (
+        <button
+          key={i}
+          type="button"
+          onClick={() => onChange(i)}
+          className={cn(
+            "h-1.5 rounded-full transition-all duration-300",
+            i === current
+              ? "bg-red-500 w-6"
+              : i < current
+                ? "bg-green-400 w-1.5"
+                : "bg-gray-300 w-1.5"
+          )}
+          aria-label={`Go to step ${i + 1}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
 // Copy-able terminal command
 // ============================================================
 
@@ -1421,7 +1734,7 @@ function CopyCommand({
   onCopy: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 p-3 bg-gray-900 rounded-lg">
+    <div className="flex items-center gap-2 p-3.5 bg-gray-900 rounded-xl border border-gray-700">
       <Terminal className="w-4 h-4 text-gray-500 shrink-0" aria-hidden="true" />
       <code className="text-sm font-mono text-green-400 flex-1 break-all select-all">
         {command}
@@ -1429,13 +1742,24 @@ function CopyCommand({
       <button
         type="button"
         onClick={onCopy}
-        className="text-gray-400 hover:text-white shrink-0 transition-colors"
+        className={cn(
+          "shrink-0 px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1",
+          copied
+            ? "bg-green-500/20 text-green-400"
+            : "bg-gray-700 text-gray-300 hover:bg-gray-600 hover:text-white"
+        )}
         aria-label="Copy command"
       >
         {copied ? (
-          <CheckCircle className="w-4 h-4 text-green-400" aria-hidden="true" />
+          <>
+            <CheckCircle className="w-3 h-3" aria-hidden="true" />
+            Copied
+          </>
         ) : (
-          <Copy className="w-4 h-4" aria-hidden="true" />
+          <>
+            <Copy className="w-3 h-3" aria-hidden="true" />
+            Copy
+          </>
         )}
       </button>
     </div>
