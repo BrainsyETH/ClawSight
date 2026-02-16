@@ -418,19 +418,25 @@ export default function SettingsPage() {
             />
           </div>
 
-          {/* Sync toggles */}
-          {[
-            { key: "activity", label: "Activity events", default: true },
-            { key: "wallet", label: "Wallet & transactions", default: true },
-            { key: "status", label: "Status heartbeats", default: true },
-            { key: "configs", label: "Skill configurations", default: true },
-          ].map((toggle) => (
+          {/* Sync toggles — wired to DB */}
+          {([
+            { key: "sync_activity", label: "Activity events" },
+            { key: "sync_wallet", label: "Wallet & transactions" },
+            { key: "sync_status", label: "Status heartbeats" },
+            { key: "sync_configs", label: "Skill configurations" },
+          ] as const).map((toggle) => (
             <div
               key={toggle.key}
               className="flex items-center justify-between py-2"
             >
               <span className="text-sm text-gray-700">{toggle.label}</span>
-              <ToggleSwitch defaultChecked={toggle.default} />
+              <ToggleSwitch
+                checked={user?.[toggle.key] ?? true}
+                onChange={() => {
+                  const current = user?.[toggle.key] ?? true;
+                  updateUser({ [toggle.key]: !current });
+                }}
+              />
             </div>
           ))}
         </CardContent>

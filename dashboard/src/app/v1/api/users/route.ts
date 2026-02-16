@@ -57,6 +57,10 @@ export async function PATCH(request: NextRequest) {
     "data_retention_days",
     "openclaw_gateway_url",
     "onboarding_completed",
+    "sync_activity",
+    "sync_wallet",
+    "sync_status",
+    "sync_configs",
   ];
 
   const updates: Record<string, unknown> = {};
@@ -162,6 +166,16 @@ export async function PATCH(request: NextRequest) {
     if (typeof updates.onboarding_completed !== "boolean") {
       return NextResponse.json(
         { error: "onboarding_completed must be a boolean" },
+        { status: 400 }
+      );
+    }
+  }
+
+  // Validate sync preference booleans
+  for (const syncField of ["sync_activity", "sync_wallet", "sync_status", "sync_configs"]) {
+    if (updates[syncField] !== undefined && typeof updates[syncField] !== "boolean") {
+      return NextResponse.json(
+        { error: `${syncField} must be a boolean` },
         { status: 400 }
       );
     }
