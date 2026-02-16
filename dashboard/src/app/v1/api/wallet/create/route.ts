@@ -22,11 +22,12 @@ function checkIpRateLimit(ip: string, max: number, windowMs: number): boolean {
 /**
  * POST /v1/api/wallet/create
  *
- * Creates a new EVM wallet via Coinbase Developer Platform (CDP).
- * The private key is managed by CDP in a Trusted Execution Environment (TEE) —
- * it never touches our server or the user's browser.
+ * Returns the user's existing agent wallet if one is already persisted
+ * in the DB. Otherwise creates a new EVM wallet via Coinbase Developer
+ * Platform (CDP), persists it, and returns it.
  *
- * Returns { address } on success.
+ * This prevents orphaned wallets from being created on every incomplete
+ * onboarding attempt.
  *
  * Rate-limited: 5 wallet creations per IP per hour.
  */
@@ -42,6 +43,30 @@ export async function POST(request: NextRequest) {
       { error: "Rate limit exceeded. Try again later." },
       { status: 429 }
     );
+  }
+
+  // If the caller is authenticated, check if they already have an agent wallet
+  try {
+    const { createServerSupabaseClient, getAuthenticatedWallet } = await import("@/lib/server/supabase");
+    const ownerWallet = await getAuthenticatedWallet();
+    if (ownerWallet) {
+      const supabase = await createServerSupabaseClient();
+      const { data: user } = await supabase
+        .from("users")
+        .select("agent_wallet_address")
+        .eq("wallet_address", ownerWallet)
+        .single();
+
+      if (user?.agent_wallet_address) {
+        // Already has a wallet — return it instead of creating a new one
+        return NextResponse.json({
+          address: user.agent_wallet_address,
+          existing: true,
+        });
+      }
+    }
+  } catch {
+    // Auth check failed — continue to create a new wallet
   }
 
   // Validate CDP credentials are configured
@@ -66,29 +91,25 @@ export async function POST(request: NextRequest) {
 
     // Create an EVM account on Base
     const account = await cdp.evm.createAccount();
+    const agentAddress = account.address.toLowerCase();
 
-    // Persist agent wallet address to DB if caller is authenticated.
-    // The caller may already have a session (onboarding flow sends
-    // this after SIWE login). Fire-and-forget — don't block wallet creation.
-    const authHeader = request.headers.get("authorization");
-    if (authHeader) {
-      try {
-        const { createServerSupabaseClient, getAuthenticatedWallet } = await import("@/lib/server/supabase");
-        const wallet = await getAuthenticatedWallet();
-        if (wallet) {
-          const supabase = await createServerSupabaseClient();
-          await supabase
-            .from("users")
-            .update({ agent_wallet_address: account.address.toLowerCase() })
-            .eq("wallet_address", wallet);
-        }
-      } catch {
-        // Non-critical — onboarding PATCH is the backup
+    // Persist agent wallet address to DB if caller is authenticated
+    try {
+      const { createServerSupabaseClient, getAuthenticatedWallet } = await import("@/lib/server/supabase");
+      const ownerWallet = await getAuthenticatedWallet();
+      if (ownerWallet) {
+        const supabase = await createServerSupabaseClient();
+        await supabase
+          .from("users")
+          .update({ agent_wallet_address: agentAddress })
+          .eq("wallet_address", ownerWallet);
       }
+    } catch {
+      // Non-critical — onboarding PATCH is the backup
     }
 
     return NextResponse.json({
-      address: account.address,
+      address: agentAddress,
     });
   } catch (err) {
     console.error("[wallet/create] CDP wallet creation failed:", err);
