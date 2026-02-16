@@ -73,12 +73,10 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Stop Fly.io machines for users who have exceeded their monthly spending cap
- * or whose subscription has lapsed.
+ * Stop Fly.io machines for users who have exceeded their monthly spending cap.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function autoStopOverBudgetAgents(supabase: any, results: { agents_stopped: number; errors: string[] }) {
-  // Fetch all running agents
   const { data: runningAgents } = await supabase
     .from("agent_registry")
     .select("wallet_address, fly_app_name, fly_machine_id")
@@ -89,63 +87,26 @@ async function autoStopOverBudgetAgents(supabase: any, results: { agents_stopped
   for (const agent of runningAgents) {
     const { wallet_address, fly_app_name, fly_machine_id } = agent;
 
-    // Check subscription status
-    const { data: sub } = await supabase
-      .from("subscriptions")
-      .select("status, plan_id")
-      .eq("wallet_address", wallet_address)
-      .single();
+    // Check monthly spending cap
+    const [userRes, monthlyRes] = await Promise.all([
+      supabase
+        .from("users")
+        .select("monthly_spend_cap_usdc")
+        .eq("wallet_address", wallet_address)
+        .single(),
+      supabase.rpc("get_monthly_spend", { p_wallet: wallet_address }),
+    ]);
+
+    const monthlyCap = Number(userRes.data?.monthly_spend_cap_usdc) || 2.00;
+    const monthlySpend = Number(monthlyRes.data) || 0;
 
     let shouldStop = false;
     let reason = "";
 
-    // Stop if subscription canceled or past_due for > 3 days
-    if (sub?.status === "canceled") {
+    if (monthlySpend >= monthlyCap * 1.1) {
+      // 10% buffer before hard stop
       shouldStop = true;
-      reason = "subscription_canceled";
-    } else if (sub?.status === "past_due") {
-      // Give 3 days grace period
-      const { data: subRow } = await supabase
-        .from("subscriptions")
-        .select("current_period_end")
-        .eq("wallet_address", wallet_address)
-        .single();
-
-      if (subRow) {
-        const periodEnd = new Date(subRow.current_period_end);
-        const gracePeriod = new Date(periodEnd.getTime() + 3 * 24 * 60 * 60 * 1000);
-        if (new Date() > gracePeriod) {
-          shouldStop = true;
-          reason = "past_due_grace_expired";
-        }
-      }
-    }
-
-    // Check monthly spending cap
-    if (!shouldStop) {
-      const [userRes, monthlyRes] = await Promise.all([
-        supabase
-          .from("users")
-          .select("monthly_spend_cap_usdc")
-          .eq("wallet_address", wallet_address)
-          .single(),
-        supabase.rpc("get_monthly_spend", { p_wallet: wallet_address }),
-      ]);
-
-      const monthlyCap = Number(userRes.data?.monthly_spend_cap_usdc) || 2.00;
-      const monthlySpend = Number(monthlyRes.data) || 0;
-
-      if (monthlySpend >= monthlyCap * 1.1) {
-        // 10% buffer before hard stop
-        shouldStop = true;
-        reason = "monthly_cap_exceeded";
-      }
-    }
-
-    // Free plan users shouldn't have running agents (they don't have cloud agent access)
-    if (!shouldStop && sub?.plan_id === "free") {
-      shouldStop = true;
-      reason = "free_plan_no_cloud_agent";
+      reason = "monthly_cap_exceeded";
     }
 
     if (shouldStop) {

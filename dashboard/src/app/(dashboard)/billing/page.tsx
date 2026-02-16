@@ -1,25 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatUSDC } from "@/lib/utils";
 import {
   CreditCard,
-  Zap,
   TrendingUp,
-  ArrowUpRight,
-  CheckCircle,
   AlertTriangle,
   Loader2,
-  Receipt,
   BarChart3,
+  Clock,
+  Activity,
 } from "lucide-react";
-import { BillingPlan, Invoice } from "@/types";
+import { UsageLedgerEntry } from "@/types";
 
-interface UsageData {
+interface UsageResponse {
   usage: {
     daily_spend: number;
     monthly_spend: number;
@@ -30,77 +27,35 @@ interface UsageData {
     daily_cap: number;
     monthly_cap: number;
   };
-  subscription: {
-    plan_id: string;
-    status: string;
-    payment_method: string;
-    current_period_end: string;
-    cancel_at_period_end: boolean;
-    plan: BillingPlan | null;
-  };
-  invoices: Invoice[];
+  history: { day: string; cost: number; calls: number }[];
+  recent_usage: UsageLedgerEntry[];
 }
+
+const OP_LABELS: Record<string, string> = {
+  api_call: "API Call",
+  config_write: "Config Write",
+  config_read: "Config Read",
+  sync: "Event Sync",
+  heartbeat: "Heartbeat",
+  export: "Data Export",
+  compute_minute: "Compute",
+  skill_install: "Skill Install",
+  x402_payment: "x402 Payment",
+};
 
 export default function BillingPage() {
   const { walletAddress } = useAuth();
-  const [usageData, setUsageData] = useState<UsageData | null>(null);
-  const [plans, setPlans] = useState<BillingPlan[]>([]);
+  const [data, setData] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [upgrading, setUpgrading] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const [usageRes, plansRes] = await Promise.all([
-          fetch("/v1/api/billing/usage"),
-          fetch("/v1/api/billing/plans"),
-        ]);
-        if (usageRes.ok) setUsageData(await usageRes.json());
-        if (plansRes.ok) {
-          const data = await plansRes.json();
-          setPlans(data.plans || []);
-        }
-      } catch (err) {
-        console.error("[billing] Fetch failed:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    if (walletAddress) fetchData();
+    if (!walletAddress) return;
+    fetch("/v1/api/billing/usage")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setData(d))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [walletAddress]);
-
-  const handleUpgrade = async (planId: string) => {
-    setUpgrading(planId);
-    try {
-      const res = await fetch("/v1/api/billing/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan_id: planId }),
-      });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else if (data.error) {
-        alert(data.error);
-      }
-    } catch {
-      alert("Failed to start checkout. Please try again.");
-    } finally {
-      setUpgrading(null);
-    }
-  };
-
-  const handleManageSubscription = async () => {
-    try {
-      const res = await fetch("/v1/api/billing/portal", { method: "POST" });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      }
-    } catch {
-      alert("Failed to open billing portal.");
-    }
-  };
 
   if (loading) {
     return (
@@ -110,235 +65,159 @@ export default function BillingPage() {
     );
   }
 
-  const sub = usageData?.subscription;
-  const usage = usageData?.usage;
-  const caps = usageData?.caps;
-  const currentPlan = sub?.plan;
-  const currentPlanId = sub?.plan_id || "free";
+  const usage = data?.usage;
+  const caps = data?.caps;
+  const history = data?.history || [];
+  const recentUsage = data?.recent_usage || [];
 
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <CreditCard className="w-6 h-6" />
-          Billing & Usage
+          Usage & Spending
         </h1>
         <p className="text-gray-500 mt-1">
-          Manage your plan, monitor usage, and view invoices.
+          Monitor your agent&apos;s x402 micropayment usage and spending caps.
         </p>
       </div>
 
-      {/* Current plan + usage meters */}
+      {/* Spending meters */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Current plan card */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
-              <Zap className="w-4 h-4" />
-              Current Plan
+              <Clock className="w-4 h-4" />
+              Daily Spending
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <p className="text-xl font-bold text-gray-900">
-                  {currentPlan?.name || "Free"}
-                </p>
-                <p className="text-sm text-gray-500">
-                  {currentPlan?.description || "Basic agent monitoring"}
-                </p>
-              </div>
-              <Badge
-                variant={sub?.status === "active" ? "default" : "destructive"}
-                className="capitalize"
-              >
-                {sub?.status || "active"}
-              </Badge>
-            </div>
-            {sub?.payment_method === "stripe" && (
-              <div className="space-y-2">
-                <p className="text-xs text-gray-400">
-                  {sub.cancel_at_period_end
-                    ? `Cancels on ${new Date(sub.current_period_end).toLocaleDateString()}`
-                    : `Renews on ${new Date(sub.current_period_end).toLocaleDateString()}`}
-                </p>
-                <Button variant="outline" size="sm" onClick={handleManageSubscription}>
-                  Manage Subscription
-                </Button>
-              </div>
-            )}
-            {currentPlanId !== "free" && (
-              <p className="text-lg font-semibold text-gray-900 mt-2">
-                {formatUSDC(currentPlan?.price_usdc || 0)}
-                <span className="text-sm font-normal text-gray-500">/mo</span>
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Usage meters */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
-              Usage This Period
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Daily spending */}
+          <CardContent className="space-y-3">
             <UsageMeter
-              label="Daily Spending"
+              label="USDC spent today"
               current={usage?.daily_spend || 0}
               max={caps?.daily_cap || 0.10}
               format="usdc"
             />
-            {/* Monthly spending */}
+            <div className="flex justify-between text-xs text-gray-500 pt-1 border-t border-gray-100">
+              <span>{usage?.daily_calls || 0} API calls</span>
+              <span>Cap: {formatUSDC(caps?.daily_cap || 0.10)}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <TrendingUp className="w-4 h-4" />
+              Monthly Spending
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
             <UsageMeter
-              label="Monthly Spending"
+              label="USDC spent this month"
               current={usage?.monthly_spend || 0}
               max={caps?.monthly_cap || 2.00}
               format="usdc"
             />
-            {/* API calls today */}
-            <UsageMeter
-              label="API Calls Today"
-              current={usage?.daily_calls || 0}
-              max={currentPlan?.daily_api_calls || 100}
-              format="number"
-            />
+            <div className="flex justify-between text-xs text-gray-500 pt-1 border-t border-gray-100">
+              <span>{usage?.monthly_calls || 0} API calls</span>
+              <span>Cap: {formatUSDC(caps?.monthly_cap || 2.00)}</span>
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Plans */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="w-4 h-4" />
-            Plans
-          </CardTitle>
-          <CardDescription>
-            Choose the plan that fits your usage. Pay with credit card or USDC.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {plans.map((plan) => {
-              const isCurrent = plan.id === currentPlanId;
-              return (
-                <div
-                  key={plan.id}
-                  className={`border rounded-lg p-4 space-y-3 ${
-                    isCurrent
-                      ? "border-red-300 bg-red-50/50 ring-1 ring-red-200"
-                      : "border-gray-200 hover:border-gray-300"
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-gray-900">{plan.name}</h3>
-                      {isCurrent && (
-                        <Badge variant="default" className="text-[10px]">Current</Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">{plan.description}</p>
-                  </div>
-
-                  <p className="text-2xl font-bold text-gray-900">
-                    {plan.price_usdc === 0 ? (
-                      "Free"
-                    ) : (
-                      <>
-                        ${plan.price_usdc}
-                        <span className="text-sm font-normal text-gray-500">/mo</span>
-                      </>
-                    )}
-                  </p>
-
-                  <ul className="space-y-1.5 text-xs text-gray-600">
-                    <PlanFeature text={`${plan.daily_api_calls.toLocaleString()} API calls/day`} />
-                    <PlanFeature text={`${plan.max_skills} skills`} />
-                    {plan.has_cloud_agent ? (
-                      <PlanFeature text={`${plan.max_agents} cloud agent${plan.max_agents > 1 ? "s" : ""}`} />
-                    ) : (
-                      <PlanFeature text="Local agent only" muted />
-                    )}
-                    <PlanFeature text={`${plan.data_retention_days}d data retention`} />
-                    {plan.has_priority_support && (
-                      <PlanFeature text="Priority support" />
-                    )}
-                  </ul>
-
-                  {isCurrent ? (
-                    <Button variant="outline" size="sm" className="w-full" disabled>
-                      <CheckCircle className="w-3 h-3 mr-1" />
-                      Current Plan
-                    </Button>
-                  ) : plan.price_usdc === 0 ? null : (
-                    <Button
-                      size="sm"
-                      className="w-full gap-1"
-                      onClick={() => handleUpgrade(plan.id)}
-                      disabled={upgrading === plan.id}
-                    >
-                      {upgrading === plan.id ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <ArrowUpRight className="w-3 h-3" />
-                      )}
-                      {currentPlanId === "free" ? "Upgrade" : "Switch"}
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Invoices */}
-      {usageData?.invoices && usageData.invoices.length > 0 && (
+      {/* 30-day spending chart */}
+      {history.length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Receipt className="w-4 h-4" />
-              Invoices
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              Last 30 Days
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {usageData.invoices.map((inv) => (
-                <div
-                  key={inv.id}
-                  className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      {new Date(inv.period_start).toLocaleDateString()} &ndash;{" "}
-                      {new Date(inv.period_end).toLocaleDateString()}
-                    </p>
-                    <p className="text-xs text-gray-500 capitalize">{inv.plan_id} plan</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm font-semibold text-gray-900">
-                      {formatUSDC(inv.total_usdc)}
-                    </span>
-                    <Badge
-                      variant={inv.status === "paid" ? "default" : "destructive"}
-                      className="text-[10px] capitalize"
-                    >
-                      {inv.status}
+            <SpendingChart history={history} dailyCap={caps?.daily_cap || 0.10} />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Recent usage ledger */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Activity className="w-4 h-4" />
+            Recent Operations
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {recentUsage.length === 0 ? (
+            <p className="text-sm text-gray-400 py-4 text-center">
+              No usage recorded yet.
+            </p>
+          ) : (
+            <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+              {recentUsage.map((entry) => (
+                <div key={entry.id} className="flex items-center justify-between py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Badge variant="secondary" className="text-[10px] shrink-0">
+                      {OP_LABELS[entry.operation] || entry.operation}
                     </Badge>
+                    {entry.skill_slug && (
+                      <span className="text-xs text-gray-500 truncate">
+                        {entry.skill_slug}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className={`text-xs font-mono ${Number(entry.cost_usdc) > 0 ? "text-gray-900" : "text-gray-400"}`}>
+                      {Number(entry.cost_usdc) > 0
+                        ? `-${formatUSDC(Number(entry.cost_usdc))}`
+                        : "free"}
+                    </span>
+                    <span className="text-[10px] text-gray-400">
+                      {formatRelativeTime(entry.occurred_at)}
+                    </span>
                   </div>
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Cost reference */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Operation Costs</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+            {[
+              { op: "Event Sync", cost: "$0.0005" },
+              { op: "Config Write", cost: "$0.001" },
+              { op: "Data Export", cost: "$0.01" },
+              { op: "API Call", cost: "$0.0001" },
+              { op: "Compute (min)", cost: "$0.0005" },
+              { op: "Heartbeat", cost: "Free" },
+              { op: "Config Read", cost: "Free" },
+              { op: "Skill Install", cost: "Free" },
+            ].map((item) => (
+              <div key={item.op} className="flex justify-between py-1 px-2 rounded bg-gray-50">
+                <span className="text-gray-600">{item.op}</span>
+                <span className={`font-mono ${item.cost === "Free" ? "text-green-600" : "text-gray-900"}`}>
+                  {item.cost}
+                </span>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
+
+// ── Components ──────────────────────────────────────────────
 
 function UsageMeter({
   label,
@@ -367,7 +246,7 @@ function UsageMeter({
           </span>
         </span>
       </div>
-      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+      <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full transition-all duration-500 ${
             isDanger ? "bg-red-500" : isWarning ? "bg-amber-500" : "bg-green-500"
@@ -378,18 +257,74 @@ function UsageMeter({
       {isDanger && (
         <p className="text-[10px] text-red-500 mt-0.5 flex items-center gap-1">
           <AlertTriangle className="w-3 h-3" />
-          Approaching limit
+          Approaching limit — agent will be paused when cap is reached
         </p>
       )}
     </div>
   );
 }
 
-function PlanFeature({ text, muted }: { text: string; muted?: boolean }) {
-  return (
-    <li className={`flex items-center gap-1.5 ${muted ? "text-gray-400" : ""}`}>
-      <CheckCircle className={`w-3 h-3 shrink-0 ${muted ? "text-gray-300" : "text-green-500"}`} />
-      {text}
-    </li>
+function SpendingChart({
+  history,
+  dailyCap,
+}: {
+  history: { day: string; cost: number; calls: number }[];
+  dailyCap: number;
+}) {
+  const maxCost = useMemo(
+    () => Math.max(dailyCap, ...history.map((d) => d.cost)),
+    [history, dailyCap]
   );
+
+  return (
+    <div>
+      <div className="flex items-end gap-[2px] h-32">
+        {history.map((d) => {
+          const heightPct = maxCost > 0 ? (d.cost / maxCost) * 100 : 0;
+          const capPct = maxCost > 0 ? (dailyCap / maxCost) * 100 : 0;
+          const overCap = d.cost >= dailyCap;
+          return (
+            <div key={d.day} className="flex-1 relative group" title={`${d.day}: ${formatUSDC(d.cost)} (${d.calls} calls)`}>
+              <div
+                className={`w-full rounded-t transition-colors ${
+                  overCap ? "bg-red-400 hover:bg-red-500" : "bg-green-400 hover:bg-green-500"
+                }`}
+                style={{ height: `${Math.max(heightPct, 1)}%` }}
+              />
+              {/* Cap line */}
+              <div
+                className="absolute left-0 right-0 border-t border-dashed border-amber-400 pointer-events-none"
+                style={{ bottom: `${capPct}%` }}
+              />
+              {/* Tooltip */}
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 hidden group-hover:block z-10 whitespace-nowrap bg-gray-800 text-white text-[10px] px-2 py-1 rounded shadow">
+                {formatUSDC(d.cost)} &middot; {d.calls} calls
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex justify-between mt-1 text-[10px] text-gray-400">
+        <span>{history.length > 0 ? formatDate(history[0].day) : ""}</span>
+        <span className="text-amber-500">--- daily cap ({formatUSDC(dailyCap)})</span>
+        <span>{history.length > 0 ? formatDate(history[history.length - 1].day) : ""}</span>
+      </div>
+    </div>
+  );
+}
+
+function formatDate(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function formatRelativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
 }

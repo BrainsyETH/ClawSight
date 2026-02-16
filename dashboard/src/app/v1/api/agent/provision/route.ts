@@ -49,26 +49,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Check plan allows cloud agents
-  const { data: sub } = await supabase
-    .from("subscriptions")
-    .select("plan_id, billing_plans(has_cloud_agent, max_agents)")
-    .eq("wallet_address", wallet)
-    .single();
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const plan = (sub as any)?.billing_plans;
-  if (plan && !plan.has_cloud_agent) {
-    return NextResponse.json(
-      {
-        error: "Cloud agents require a Starter plan or above.",
-        code: "PLAN_UPGRADE_REQUIRED",
-        upgrade_url: "/billing",
-      },
-      { status: 403 }
-    );
-  }
-
   // Check if user already has a provisioned agent
   const { data: existing } = await supabase
     .from("agent_registry")

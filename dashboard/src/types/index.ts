@@ -247,12 +247,6 @@ export interface DashboardState {
 // Billing types
 // ============================================================
 
-export type BillingPlanId = "free" | "starter" | "pro";
-
-export type SubscriptionStatus = "active" | "past_due" | "canceled" | "trialing";
-
-export type PaymentMethod = "x402" | "stripe" | "free";
-
 export type UsageOperation =
   | "api_call"
   | "config_write"
@@ -263,41 +257,6 @@ export type UsageOperation =
   | "compute_minute"
   | "skill_install"
   | "x402_payment";
-
-export interface BillingPlan {
-  id: BillingPlanId;
-  name: string;
-  description: string | null;
-  price_usdc: number;
-  price_usd_cents: number;
-  stripe_price_id: string | null;
-  daily_api_calls: number;
-  monthly_api_calls: number;
-  max_skills: number;
-  max_agents: number;
-  compute_minutes_mo: number;
-  data_retention_days: number;
-  has_cloud_agent: boolean;
-  has_priority_support: boolean;
-  has_custom_skills: boolean;
-  sort_order: number;
-  active: boolean;
-}
-
-export interface Subscription {
-  id: string;
-  wallet_address: string;
-  plan_id: BillingPlanId;
-  status: SubscriptionStatus;
-  payment_method: PaymentMethod;
-  stripe_customer_id: string | null;
-  stripe_subscription_id: string | null;
-  current_period_start: string;
-  current_period_end: string;
-  cancel_at_period_end: boolean;
-  created_at: string;
-  updated_at: string;
-}
 
 export interface UsageLedgerEntry {
   id: string;
@@ -314,19 +273,4 @@ export interface UsageDailySummary {
   day: string;
   total_cost_usdc: number;
   api_calls: number;
-}
-
-export interface Invoice {
-  id: string;
-  wallet_address: string;
-  period_start: string;
-  period_end: string;
-  plan_id: BillingPlanId;
-  plan_cost_usdc: number;
-  usage_cost_usdc: number;
-  total_usdc: number;
-  status: "draft" | "pending" | "paid" | "failed" | "void";
-  stripe_invoice_id: string | null;
-  paid_at: string | null;
-  created_at: string;
 }

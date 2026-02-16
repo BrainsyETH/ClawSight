@@ -3,18 +3,18 @@ import { UsageOperation } from "@/types";
 
 // ============================================================
 // Cost table: USDC cost per operation.
-// Free operations have cost 0. Heartbeats are free per REVIEW_MVP.md.
+// Heartbeats and reads are free. Everything else is metered.
 // ============================================================
 const OPERATION_COSTS: Record<UsageOperation, number> = {
   api_call:       0.0001,   // $0.0001 per generic API call
   config_write:   0.001,    // $0.001  per config save
   config_read:    0,        // Free
   sync:           0.0005,   // $0.0005 per event batch sync
-  heartbeat:      0,        // Free (per review recommendation)
+  heartbeat:      0,        // Free
   export:         0.01,     // $0.01   per data export
   compute_minute: 0.0005,   // $0.0005 per minute of Fly.io compute
   skill_install:  0,        // Free
-  x402_payment:   0,        // Pass-through (cost recorded from payment amount)
+  x402_payment:   0,        // Pass-through (cost recorded from actual payment amount)
 };
 
 export function getOperationCost(op: UsageOperation): number {
@@ -23,13 +23,12 @@ export function getOperationCost(op: UsageOperation): number {
 
 /**
  * Check whether a wallet has exceeded their daily or monthly spending cap.
- * Returns { allowed: true } or { allowed: false, reason: string }.
+ * Caps are set per-user in the users table.
  */
 export async function checkSpendingCaps(
   supabase: SupabaseClient,
   wallet: string
-): Promise<{ allowed: boolean; reason?: string; daily_spend?: number; monthly_spend?: number }> {
-  // Fetch user caps and current spend in parallel
+): Promise<{ allowed: boolean; reason?: string; daily_spend?: number; monthly_spend?: number; daily_cap?: number; monthly_cap?: number }> {
   const [userRes, dailyRes, monthlyRes] = await Promise.all([
     supabase
       .from("users")
@@ -41,7 +40,7 @@ export async function checkSpendingCaps(
   ]);
 
   const user = userRes.data;
-  if (!user) return { allowed: true }; // No user = no caps to check
+  if (!user) return { allowed: true };
 
   const dailySpend = Number(dailyRes.data) || 0;
   const monthlySpend = Number(monthlyRes.data) || 0;
@@ -54,6 +53,8 @@ export async function checkSpendingCaps(
       reason: `Daily spending cap reached ($${dailySpend.toFixed(4)} / $${dailyCap.toFixed(2)})`,
       daily_spend: dailySpend,
       monthly_spend: monthlySpend,
+      daily_cap: dailyCap,
+      monthly_cap: monthlyCap,
     };
   }
 
@@ -63,81 +64,17 @@ export async function checkSpendingCaps(
       reason: `Monthly spending cap reached ($${monthlySpend.toFixed(4)} / $${monthlyCap.toFixed(2)})`,
       daily_spend: dailySpend,
       monthly_spend: monthlySpend,
+      daily_cap: dailyCap,
+      monthly_cap: monthlyCap,
     };
   }
 
-  return { allowed: true, daily_spend: dailySpend, monthly_spend: monthlySpend };
-}
-
-/**
- * Check plan-level API call limits.
- */
-export async function checkPlanLimits(
-  supabase: SupabaseClient,
-  wallet: string
-): Promise<{ allowed: boolean; reason?: string; plan_id?: string }> {
-  // Fetch subscription + plan limits
-  const { data: sub } = await supabase
-    .from("subscriptions")
-    .select("plan_id, status, billing_plans(*)")
-    .eq("wallet_address", wallet)
-    .single();
-
-  if (!sub || sub.status === "canceled") {
-    // Default to free plan limits
-    return checkFreePlanLimits(supabase, wallet);
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const plan = (sub as any).billing_plans;
-  if (!plan) return { allowed: true, plan_id: sub.plan_id };
-
-  // Check daily API calls
-  const { data: dailyData } = await supabase
-    .from("usage_daily_summary")
-    .select("api_calls")
-    .eq("wallet_address", wallet)
-    .eq("day", new Date().toISOString().split("T")[0])
-    .single();
-
-  const dailyCalls = dailyData?.api_calls || 0;
-  if (dailyCalls >= plan.daily_api_calls) {
-    return {
-      allowed: false,
-      reason: `Daily API call limit reached (${dailyCalls}/${plan.daily_api_calls}). Upgrade your plan for higher limits.`,
-      plan_id: sub.plan_id,
-    };
-  }
-
-  return { allowed: true, plan_id: sub.plan_id };
-}
-
-async function checkFreePlanLimits(
-  supabase: SupabaseClient,
-  wallet: string
-): Promise<{ allowed: boolean; reason?: string; plan_id: string }> {
-  const { data: dailyData } = await supabase
-    .from("usage_daily_summary")
-    .select("api_calls")
-    .eq("wallet_address", wallet)
-    .eq("day", new Date().toISOString().split("T")[0])
-    .single();
-
-  const dailyCalls = dailyData?.api_calls || 0;
-  if (dailyCalls >= 100) {
-    return {
-      allowed: false,
-      reason: `Free plan daily limit reached (${dailyCalls}/100). Upgrade to Starter for 1,000 daily calls.`,
-      plan_id: "free",
-    };
-  }
-
-  return { allowed: true, plan_id: "free" };
+  return { allowed: true, daily_spend: dailySpend, monthly_spend: monthlySpend, daily_cap: dailyCap, monthly_cap: monthlyCap };
 }
 
 /**
  * Record a billable operation in the usage ledger.
- * Updates the daily summary atomically via RPC.
+ * Atomically increments the daily rollup via RPC.
  */
 export async function recordUsage(
   supabase: SupabaseClient,
@@ -147,7 +84,6 @@ export async function recordUsage(
 ): Promise<void> {
   const cost = opts?.cost_override ?? getOperationCost(operation);
 
-  // Insert to usage_ledger
   await supabase.from("usage_ledger").insert({
     wallet_address: wallet,
     operation,
@@ -156,7 +92,7 @@ export async function recordUsage(
     metadata: opts?.metadata || {},
   });
 
-  // Update daily summary via RPC (atomic increment)
+  // Atomic increment of daily summary
   if (cost > 0 || operation === "api_call") {
     await supabase.rpc("increment_daily_usage", {
       p_wallet: wallet,
@@ -206,4 +142,47 @@ export async function getUsageSummary(
     monthly_spend: monthlyRows.reduce((sum, r) => sum + Number(r.total_cost_usdc), 0),
     monthly_calls: monthlyRows.reduce((sum, r) => sum + r.api_calls, 0),
   };
+}
+
+/**
+ * Get daily usage history for the last N days (for charts).
+ */
+export async function getUsageHistory(
+  supabase: SupabaseClient,
+  wallet: string,
+  days: number = 30
+): Promise<{ day: string; cost: number; calls: number }[]> {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+
+  const { data } = await supabase
+    .from("usage_daily_summary")
+    .select("day, total_cost_usdc, api_calls")
+    .eq("wallet_address", wallet)
+    .gte("day", since.toISOString().split("T")[0])
+    .order("day", { ascending: true });
+
+  return (data || []).map((r) => ({
+    day: r.day,
+    cost: Number(r.total_cost_usdc),
+    calls: r.api_calls,
+  }));
+}
+
+/**
+ * Get recent ledger entries (for activity log).
+ */
+export async function getRecentUsage(
+  supabase: SupabaseClient,
+  wallet: string,
+  limit: number = 50
+) {
+  const { data } = await supabase
+    .from("usage_ledger")
+    .select("*")
+    .eq("wallet_address", wallet)
+    .order("occurred_at", { ascending: false })
+    .limit(limit);
+
+  return data || [];
 }

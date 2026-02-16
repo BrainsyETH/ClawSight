@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { UsageOperation } from "@/types";
-import { getOperationCost, checkSpendingCaps, checkPlanLimits, recordUsage } from "./billing";
+import { getOperationCost, checkSpendingCaps, recordUsage } from "./billing";
 
 const CLAWSIGHT_PAYMENT_ADDRESS = process.env.CLAWSIGHT_PAYMENT_ADDRESS || "0x0000000000000000000000000000000000000000";
 
@@ -17,14 +17,16 @@ interface X402PaymentProof {
 }
 
 /**
- * Billing middleware for API routes.
+ * Billing gate for API routes.
  *
- * Checks:
- *   1. Plan-level API call limits
- *   2. User's spending caps (daily/monthly)
- *   3. x402 payment header (if present, validates and records)
+ * Flow:
+ *   1. Free ops → record + pass through
+ *   2. Paid ops → check user spending caps (daily/monthly)
+ *   3. If over cap → return 402 with X-Payment-Required header
+ *   4. If x402 payment header present → validate proof, record payment
+ *   5. Record operation usage
  *
- * Returns null if allowed, or a NextResponse (402/429) if blocked.
+ * Returns null if allowed, or a NextResponse (402) if blocked.
  */
 export async function billingGate(
   supabase: SupabaseClient,
@@ -33,7 +35,6 @@ export async function billingGate(
   opts?: {
     paymentHeader?: string | null;
     skill_slug?: string;
-    skip_cap_check?: boolean;
   }
 ): Promise<NextResponse | null> {
   const cost = getOperationCost(operation);
@@ -44,24 +45,10 @@ export async function billingGate(
     return null;
   }
 
-  // Check plan limits (API call quotas)
-  const planCheck = await checkPlanLimits(supabase, wallet);
-  if (!planCheck.allowed) {
-    return NextResponse.json(
-      {
-        error: planCheck.reason,
-        code: "PLAN_LIMIT_EXCEEDED",
-        upgrade_url: "/billing",
-      },
-      { status: 429 }
-    );
-  }
-
-  // Check user spending caps (unless explicitly skipped for free ops)
-  if (!opts?.skip_cap_check && cost > 0) {
+  // Check user spending caps
+  if (cost > 0) {
     const capCheck = await checkSpendingCaps(supabase, wallet);
     if (!capCheck.allowed) {
-      // Return 402 — the plugin client will sign a payment
       return x402Response(cost, capCheck.reason || "Spending cap reached");
     }
   }
@@ -76,7 +63,7 @@ export async function billingGate(
       );
     }
 
-    // Record the x402 payment as usage
+    // Record the x402 payment
     await recordUsage(supabase, wallet, "x402_payment", {
       cost_override: paymentResult.amount,
       skill_slug: opts.skill_slug,
@@ -96,8 +83,8 @@ export async function billingGate(
 }
 
 /**
- * Build a 402 Payment Required response with proper headers.
- * The plugin client reads X-Payment-Required to sign a payment.
+ * Build a 402 Payment Required response with x402 headers.
+ * Plugin client reads X-Payment-Required to sign a USDC transfer.
  */
 function x402Response(cost: number, reason: string): NextResponse {
   const res = NextResponse.json(
@@ -110,7 +97,7 @@ function x402Response(cost: number, reason: string): NextResponse {
     { status: 402 }
   );
 
-  // x402 standard header: "USDC <amount> <recipient>"
+  // x402 header: "USDC <amount> <recipient>"
   res.headers.set(
     "X-Payment-Required",
     `USDC ${cost.toFixed(6)} ${CLAWSIGHT_PAYMENT_ADDRESS}`
@@ -122,13 +109,15 @@ function x402Response(cost: number, reason: string): NextResponse {
 /**
  * Validate an X-Payment header from the plugin client.
  *
- * In production, this would:
- *   1. Decode the base64 payment proof
- *   2. Verify the signed transaction on-chain (Base L2)
- *   3. Confirm the payment was to our address for the correct amount
+ * Checks:
+ *   - Payment type, chain, token
+ *   - Amount >= expected cost
+ *   - Recipient matches our address
+ *   - Payer matches authenticated wallet
+ *   - Signed tx exists
+ *   - Timestamp within 5 minutes
  *
- * For MVP, we do structural validation + trust the signed tx.
- * On-chain verification can be added via a viem publicClient.
+ * TODO: On-chain verification via viem publicClient for production.
  */
 function validateX402Payment(
   paymentHeader: string,
@@ -139,7 +128,6 @@ function validateX402Payment(
     const decoded = Buffer.from(paymentHeader, "base64").toString("utf-8");
     const proof: X402PaymentProof = JSON.parse(decoded);
 
-    // Structural checks
     if (proof.type !== "x402-payment") {
       return { valid: false, reason: "Invalid payment type" };
     }
@@ -155,30 +143,22 @@ function validateX402Payment(
       return { valid: false, reason: `Insufficient payment ($${amount} < $${expectedCost})` };
     }
 
-    // Verify recipient
     if (proof.recipient.toLowerCase() !== CLAWSIGHT_PAYMENT_ADDRESS.toLowerCase()) {
       return { valid: false, reason: "Payment to wrong recipient" };
     }
 
-    // Verify payer matches the authenticated wallet
     if (proof.payer.toLowerCase() !== expectedPayer.toLowerCase()) {
       return { valid: false, reason: "Payer doesn't match authenticated wallet" };
     }
 
-    // Verify signed_tx exists
     if (!proof.signed_tx || proof.signed_tx.length < 10) {
       return { valid: false, reason: "Missing or invalid signed transaction" };
     }
 
-    // Timestamp check (payment must be recent — within 5 minutes)
     const paymentTime = new Date(proof.timestamp).getTime();
     if (isNaN(paymentTime) || Date.now() - paymentTime > 5 * 60 * 1000) {
       return { valid: false, reason: "Payment expired (>5 min old)" };
     }
-
-    // TODO: On-chain verification via viem publicClient
-    // const publicClient = createPublicClient({ chain: base, transport: http() });
-    // await publicClient.waitForTransactionReceipt({ hash: proof.signed_tx });
 
     return {
       valid: true,
