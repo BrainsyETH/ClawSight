@@ -9,20 +9,21 @@ import {
   ReactNode,
 } from "react";
 import { useAccount, useConnect, useDisconnect, useSignMessage } from "wagmi";
-import { injected } from "@wagmi/connectors";
+import { injected, coinbaseWallet } from "@wagmi/connectors";
 import { createSiweMessage, generateNonce } from "@/lib/siwe";
 import { createClient } from "@/lib/supabase";
 
-type AuthMethod = "siwe" | "email" | null;
+type AuthMethod = "siwe" | null;
 
 interface AuthContextValue {
   walletAddress: string | null;
   isAuthenticated: boolean;
   isConnecting: boolean;
   authMethod: AuthMethod;
+  /** Connect with an injected wallet (MetaMask, etc.) via SIWE */
   connect: () => Promise<void>;
-  signUpWithEmail: (email: string, password: string) => Promise<string>;
-  signInWithEmail: (email: string, password: string) => Promise<void>;
+  /** Connect with Coinbase Smart Wallet (passkey-based, no extension) via SIWE */
+  connectSmartWallet: () => Promise<void>;
   disconnect: () => void;
   signMessage: (message: string) => Promise<string>;
 }
@@ -30,13 +31,11 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 /**
- * Auth provider supporting two authentication methods:
+ * Unified wallet-based auth provider.
  *
- * 1. SIWE (Sign-In with Ethereum) — for power users with existing wallets
- * 2. Email + password — for normie users, paired with an auto-generated agent wallet
- *
- * Both methods store wallet_address in Supabase user_metadata so downstream
- * code (RLS, API routes) works identically regardless of auth method.
+ * Both power users (MetaMask) and new users (Coinbase Smart Wallet)
+ * authenticate via SIWE. The wallet address IS the user's identity.
+ * No email or password involved.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { address, isConnected } = useAccount();
@@ -47,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [authMethod, setAuthMethod] = useState<AuthMethod>(null);
 
-  // Sync wagmi state to our context (SIWE users)
+  // Sync wagmi state to our context
   useEffect(() => {
     if (isConnected && address) {
       setWalletAddress(address);
@@ -57,152 +56,82 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [isConnected, address]);
 
-  // Restore session on mount — check localStorage first, then Supabase session
+  // Restore session on mount
   useEffect(() => {
     const stored = localStorage.getItem("clawsight_wallet");
-    const method = localStorage.getItem("clawsight_auth_method") as AuthMethod;
     if (stored && !walletAddress) {
       setWalletAddress(stored);
-      setAuthMethod(method || null);
+      setAuthMethod("siwe");
     }
-
-    // Also check Supabase session for email users whose localStorage may be cleared
-    const checkSession = async () => {
-      const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.user_metadata?.wallet_address && !stored) {
-        const addr = user.user_metadata.wallet_address as string;
-        setWalletAddress(addr);
-        setAuthMethod("email");
-        localStorage.setItem("clawsight_wallet", addr);
-        localStorage.setItem("clawsight_auth_method", "email");
-      }
-    };
-    checkSession();
   }, [walletAddress]);
 
-  // SIWE connect flow (power users)
-  const connect = useCallback(async () => {
-    setIsConnecting(true);
-    try {
-      const result = await connectAsync({ connector: injected() });
-      const addr = result.accounts[0];
+  /**
+   * Core SIWE auth flow — shared by both connect methods.
+   * Connects via the given wagmi connector, signs a SIWE message,
+   * and creates a Supabase session + user row.
+   */
+  const connectWithConnector = useCallback(
+    async (connector: ReturnType<typeof injected> | ReturnType<typeof coinbaseWallet>) => {
+      setIsConnecting(true);
+      try {
+        const result = await connectAsync({ connector });
+        const addr = result.accounts[0];
 
-      const nonce = generateNonce();
-      const siweMessage = createSiweMessage(addr, nonce);
-      const message = siweMessage.prepareMessage();
-      const signature = await signMessageAsync({ message });
+        // SIWE signature
+        const nonce = generateNonce();
+        const siweMessage = createSiweMessage(addr, nonce);
+        const message = siweMessage.prepareMessage();
+        const signature = await signMessageAsync({ message });
 
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithIdToken({
-        provider: "google" as never,
-        token: JSON.stringify({
-          message: siweMessage.toMessage(),
-          signature,
-          wallet_address: addr,
-        }),
-      });
+        // Create Supabase session
+        const supabase = createClient();
+        const { error } = await supabase.auth.signInWithIdToken({
+          provider: "google" as never,
+          token: JSON.stringify({
+            message: siweMessage.toMessage(),
+            signature,
+            wallet_address: addr,
+          }),
+        });
 
-      if (error) {
-        throw new Error(`SIWE authentication failed: ${error.message}`);
+        if (error) {
+          throw new Error(`SIWE authentication failed: ${error.message}`);
+        }
+
+        // Create user row
+        await supabase.from("users").upsert(
+          { wallet_address: addr },
+          { onConflict: "wallet_address", ignoreDuplicates: true }
+        );
+
+        setWalletAddress(addr);
+        setAuthMethod("siwe");
+        localStorage.setItem("clawsight_wallet", addr);
+        localStorage.setItem("clawsight_auth_method", "siwe");
+      } catch (err) {
+        console.error("[auth] Connection failed:", err);
+        throw err;
+      } finally {
+        setIsConnecting(false);
       }
+    },
+    [connectAsync, signMessageAsync]
+  );
 
-      await supabase.from("users").upsert(
-        { wallet_address: addr },
-        { onConflict: "wallet_address", ignoreDuplicates: true }
-      );
+  // Connect with injected wallet (MetaMask, etc.)
+  const connect = useCallback(
+    () => connectWithConnector(injected()),
+    [connectWithConnector]
+  );
 
-      setWalletAddress(addr);
-      setAuthMethod("siwe");
-      localStorage.setItem("clawsight_wallet", addr);
-      localStorage.setItem("clawsight_auth_method", "siwe");
-    } catch (err) {
-      console.error("[auth] Connection failed:", err);
-    } finally {
-      setIsConnecting(false);
-    }
-  }, [connectAsync, signMessageAsync]);
-
-  // Email signup flow (new users)
-  // 1. Creates a CDP-managed wallet via server API
-  // 2. Creates Supabase auth account with the wallet address
-  // 3. Creates user row
-  const signUpWithEmail = useCallback(async (email: string, password: string): Promise<string> => {
-    setIsConnecting(true);
-    try {
-      // Step 1: Create CDP wallet via server route
-      const walletRes = await fetch("/v1/api/wallet/create", { method: "POST" });
-      if (!walletRes.ok) {
-        const body = await walletRes.json().catch(() => ({}));
-        throw new Error(body.error || "Failed to create agent wallet");
-      }
-      const { address: walletAddr } = await walletRes.json();
-
-      // Step 2: Create Supabase auth account
-      const supabase = createClient();
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { wallet_address: walletAddr },
-        },
-      });
-
-      if (error) {
-        throw new Error(`Sign up failed: ${error.message}`);
-      }
-
-      // Step 3: Create user row with the CDP wallet address
-      await supabase.from("users").upsert(
-        { wallet_address: walletAddr },
-        { onConflict: "wallet_address", ignoreDuplicates: true }
-      );
-
-      setWalletAddress(walletAddr);
-      setAuthMethod("email");
-      localStorage.setItem("clawsight_wallet", walletAddr);
-      localStorage.setItem("clawsight_auth_method", "email");
-      localStorage.setItem("clawsight_agent_wallet_address", walletAddr);
-
-      return walletAddr;
-    } catch (err) {
-      console.error("[auth] Email signup failed:", err);
-      throw err;
-    } finally {
-      setIsConnecting(false);
-    }
-  }, []);
-
-  // Email sign-in flow (returning email users)
-  const signInWithEmail = useCallback(async (email: string, password: string) => {
-    setIsConnecting(true);
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) {
-        throw new Error(`Sign in failed: ${error.message}`);
-      }
-
-      const addr = data.user?.user_metadata?.wallet_address as string;
-      if (!addr) {
-        throw new Error("No wallet address associated with this account");
-      }
-
-      setWalletAddress(addr);
-      setAuthMethod("email");
-      localStorage.setItem("clawsight_wallet", addr);
-      localStorage.setItem("clawsight_auth_method", "email");
-    } catch (err) {
-      console.error("[auth] Email signin failed:", err);
-      throw err;
-    } finally {
-      setIsConnecting(false);
-    }
-  }, []);
+  // Connect with Coinbase Smart Wallet (passkey-based)
+  const connectSmartWallet = useCallback(
+    () =>
+      connectWithConnector(
+        coinbaseWallet({ appName: "ClawSight", preference: "smartWalletOnly" })
+      ),
+    [connectWithConnector]
+  );
 
   const disconnect = useCallback(() => {
     wagmiDisconnect();
@@ -232,8 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isConnecting,
         authMethod,
         connect,
-        signUpWithEmail,
-        signInWithEmail,
+        connectSmartWallet,
         disconnect,
         signMessage: signMsg,
       }}

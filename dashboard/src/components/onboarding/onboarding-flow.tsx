@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,13 +22,10 @@ import {
   ArrowLeft,
   ExternalLink,
   RefreshCw,
-  Mail,
   Cloud,
   Server,
   Shield,
   Copy,
-  Eye,
-  EyeOff,
   AlertTriangle,
   Terminal,
   HelpCircle,
@@ -82,7 +79,7 @@ export function OnboardingFlow({
   onSaveAgentName,
   onInstallSkill,
 }: OnboardingFlowProps) {
-  const { connect: authConnect, signUpWithEmail } = useAuth();
+  const { connect: authConnect, connectSmartWallet } = useAuth();
 
   // Track & step state
   const [track, setTrack] = useState<Track>("select");
@@ -98,16 +95,11 @@ export function OnboardingFlow({
   );
   const [gatewayUrl, setGatewayUrl] = useState("http://localhost:3080");
 
-  // Track B — email account
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [passwordConfirm, setPasswordConfirm] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [signupError, setSignupError] = useState<string | null>(null);
-  const [signingUp, setSigningUp] = useState(false);
-
-  // Track B — agent wallet (CDP-managed, no private key exposure)
-  const [generatedAddress, setGeneratedAddress] = useState<string | null>(null);
+  // Track B — Smart Wallet connection + agent wallet
+  const [connectingSmartWallet, setConnectingSmartWallet] = useState(false);
+  const [smartWalletError, setSmartWalletError] = useState<string | null>(null);
+  const [agentWalletAddress, setAgentWalletAddress] = useState<string | null>(null);
+  const [creatingAgentWallet, setCreatingAgentWallet] = useState(false);
   const [addressCopied, setAddressCopied] = useState(false);
 
   // Track B — OpenClaw setup
@@ -190,29 +182,29 @@ export function OnboardingFlow({
 
   // ---- Track B handlers ----
 
-  const handleEmailSignup = async () => {
-    setSignupError(null);
-    if (password !== passwordConfirm) {
-      setSignupError("Passwords do not match");
-      return;
-    }
-    if (password.length < 8) {
-      setSignupError("Password must be at least 8 characters");
-      return;
-    }
-
-    setSigningUp(true);
+  const handleSmartWalletConnect = async () => {
+    setSmartWalletError(null);
+    setConnectingSmartWallet(true);
     try {
-      // Creates CDP wallet + Supabase account in one call
-      const addr = await signUpWithEmail(email, password);
-      setGeneratedAddress(addr);
+      await connectSmartWallet();
+      // After wallet connects, create the CDP agent wallet for x402 payments
+      setCreatingAgentWallet(true);
+      const walletRes = await fetch("/v1/api/wallet/create", { method: "POST" });
+      if (!walletRes.ok) {
+        const body = await walletRes.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to create agent wallet");
+      }
+      const { address } = await walletRes.json();
+      setAgentWalletAddress(address);
+      localStorage.setItem("clawsight_agent_wallet_address", address);
       setTrackBStep("agent-wallet");
     } catch (err) {
-      setSignupError(
-        err instanceof Error ? err.message : "Account creation failed"
+      setSmartWalletError(
+        err instanceof Error ? err.message : "Connection failed"
       );
     } finally {
-      setSigningUp(false);
+      setConnectingSmartWallet(false);
+      setCreatingAgentWallet(false);
     }
   };
 
@@ -298,7 +290,7 @@ export function OnboardingFlow({
     }
   };
 
-  const copyToClipboard = async (text: string) => {
+  const copyAddress = async (text: string) => {
     await navigator.clipboard.writeText(text);
     setAddressCopied(true);
     setTimeout(() => setAddressCopied(false), 2000);
@@ -438,15 +430,15 @@ export function OnboardingFlow({
                         I&apos;m new here
                       </h2>
                       <p className="text-sm text-gray-500">
-                        Create an account and we&apos;ll set up an agent
-                        wallet for you. No crypto experience needed.
+                        Sign in with Coinbase Smart Wallet using Face ID
+                        or fingerprint. No extensions, no seed phrases.
                       </p>
                       <div className="flex items-center gap-2 mt-3">
                         <Badge variant="secondary" className="text-[10px]">
-                          Email Signup
+                          Smart Wallet
                         </Badge>
                         <Badge variant="secondary" className="text-[10px]">
-                          Auto Wallet
+                          Passkey Auth
                         </Badge>
                         <Badge variant="secondary" className="text-[10px]">
                           Guided Setup
@@ -558,134 +550,65 @@ export function OnboardingFlow({
         )}
 
         {/* ================================================
-            TRACK B — STEP 1: CREATE ACCOUNT (EMAIL)
+            TRACK B — STEP 1: CONNECT SMART WALLET
         ================================================ */}
         {track === "b" && trackBStep === "account" && (
           <Card>
-            <CardContent className="p-8">
-              <div className="text-center mb-6">
-                <Mail
-                  className="w-12 h-12 text-red-500 mx-auto mb-4"
-                  aria-hidden="true"
-                />
-                <h2 className="text-xl font-semibold mb-2">Create Account</h2>
-                <p className="text-gray-500">
-                  Sign up with your email. We&apos;ll generate a secure agent
-                  wallet for you automatically.
-                </p>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <label
-                    htmlFor="signup-email"
-                    className="text-sm font-medium text-gray-700 block mb-1"
-                  >
-                    Email
-                  </label>
-                  <Input
-                    id="signup-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    autoComplete="email"
-                    autoFocus
-                  />
+            <CardContent className="p-8 text-center">
+              <Wallet
+                className="w-12 h-12 text-amber-500 mx-auto mb-4"
+                aria-hidden="true"
+              />
+              <h2 className="text-xl font-semibold mb-2">Create Your Wallet</h2>
+              <p className="text-gray-500 mb-6">
+                Sign in with Coinbase Smart Wallet. It uses your fingerprint
+                or Face ID &mdash; no passwords, no browser extensions, no
+                seed phrases.
+              </p>
+
+              {smartWalletError && (
+                <div className="flex items-start gap-2 text-red-600 text-sm bg-red-50 rounded-lg p-3 mb-4 text-left">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  {smartWalletError}
                 </div>
-                <div>
-                  <label
-                    htmlFor="signup-password"
-                    className="text-sm font-medium text-gray-700 block mb-1"
-                  >
-                    Password
-                  </label>
-                  <div className="relative">
-                    <Input
-                      id="signup-password"
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Min 8 characters"
-                      autoComplete="new-password"
-                      className="pr-10"
+              )}
+
+              <Button
+                onClick={handleSmartWalletConnect}
+                disabled={connectingSmartWallet}
+                size="lg"
+                className="w-full gap-2"
+              >
+                {connectingSmartWallet ? (
+                  <>
+                    <Loader2
+                      className="w-4 h-4 animate-spin"
+                      aria-hidden="true"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      aria-label={
-                        showPassword ? "Hide password" : "Show password"
-                      }
-                    >
-                      {showPassword ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label
-                    htmlFor="signup-password-confirm"
-                    className="text-sm font-medium text-gray-700 block mb-1"
-                  >
-                    Confirm Password
-                  </label>
-                  <Input
-                    id="signup-password-confirm"
-                    type={showPassword ? "text" : "password"}
-                    value={passwordConfirm}
-                    onChange={(e) => setPasswordConfirm(e.target.value)}
-                    placeholder="Repeat password"
-                    autoComplete="new-password"
-                  />
-                </div>
-
-                {signupError && (
-                  <div className="flex items-start gap-2 text-red-600 text-sm bg-red-50 rounded-lg p-3">
-                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                    {signupError}
-                  </div>
+                    {creatingAgentWallet ? "Creating agent wallet..." : "Connecting..."}
+                  </>
+                ) : (
+                  <>
+                    <Wallet className="w-4 h-4" aria-hidden="true" />
+                    Sign In with Smart Wallet
+                  </>
                 )}
+              </Button>
 
-                <Button
-                  onClick={handleEmailSignup}
-                  disabled={
-                    signingUp ||
-                    !email.trim() ||
-                    !password ||
-                    !passwordConfirm
-                  }
-                  size="lg"
-                  className="w-full gap-2"
-                >
-                  {signingUp ? (
-                    <>
-                      <Loader2
-                        className="w-4 h-4 animate-spin"
-                        aria-hidden="true"
-                      />
-                      Creating account...
-                    </>
-                  ) : (
-                    <>
-                      Create Account
-                      <ArrowRight className="w-4 h-4" aria-hidden="true" />
-                    </>
-                  )}
-                </Button>
-              </div>
-              <Explainer question="Why do I need an account?">
+              <Explainer question="What is a Smart Wallet?">
                 <p className="mb-2">
-                  Your email account lets you sign in to ClawSight from any device.
-                  When you create an account, we also generate a <strong>wallet</strong> for
-                  your AI agent automatically.
+                  A <strong>Coinbase Smart Wallet</strong> is a crypto wallet that uses
+                  passkeys (Face ID, fingerprint, or PIN) instead of passwords or seed phrases.
+                  It&apos;s created instantly in your browser &mdash; no app download needed.
+                </p>
+                <p className="mb-2">
+                  Your wallet address becomes your identity across ClawSight.
+                  No email, no password &mdash; just your biometric.
                 </p>
                 <p>
-                  This wallet is like a prepaid card for your agent. You fund it with USDC
-                  (a stablecoin pegged to the US dollar), and your agent uses it to pay for
-                  API calls via tiny micropayments. You set the spending limits.
+                  Behind the scenes, we also create a separate <strong>agent wallet</strong> for
+                  your AI agent to use for micropayments. This keeps your personal funds
+                  separate from your agent&apos;s spending budget.
                 </p>
               </Explainer>
 
@@ -728,12 +651,12 @@ export function OnboardingFlow({
                   </p>
                   <div className="flex items-center gap-2">
                     <code className="text-xs font-mono text-gray-800 break-all flex-1">
-                      {generatedAddress}
+                      {agentWalletAddress}
                     </code>
                     <button
                       type="button"
                       onClick={() =>
-                        generatedAddress && copyToClipboard(generatedAddress)
+                        agentWalletAddress && copyAddress(agentWalletAddress)
                       }
                       className="text-gray-400 hover:text-gray-600 shrink-0"
                       aria-label="Copy address"
